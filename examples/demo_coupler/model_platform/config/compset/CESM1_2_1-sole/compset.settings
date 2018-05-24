@@ -1,0 +1,27 @@
+common
+{
+    model=cesm
+    lib=c_coupler
+    _case_desc=CESM1_2_1 sole run template
+    _run_type=initial
+    _run_start_date=0001-01-01
+    _run_start_second=00000
+    _run_stop_date=1200-01-03
+    _run_stop_second=00000
+    _rest_freq_unit=months
+    _rest_freq_count=1
+    _leap_year = false
+    _orbYear = 1990
+    _run_restart_date=1300-02-01
+    _run_restart_second=00000
+    _original_case_name=original_case
+    _original_config_time=130426-111111
+}
+cesm
+{
+    realname=cesm1_2_1
+    type=cesm
+    num_total_proc=64
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=1 
+}

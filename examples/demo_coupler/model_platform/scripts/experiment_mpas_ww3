@@ -1,0 +1,3 @@
+COMPSET=MPAS_WW3
+CASEROOT="/home/sunchao/work3/c-couper2_plarform/model_experiments/mpas_wwatch3"
+MACH=generic_linux

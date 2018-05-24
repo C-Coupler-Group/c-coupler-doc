@@ -1,0 +1,5 @@
+COMPSET=atm_demo
+MACH=generic_linux
+#CONFIGROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/C-Coupler_Model_Platform/config
+#CODEROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/C-Coupler_Model_Platform/models
+#DATAROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/inputdata

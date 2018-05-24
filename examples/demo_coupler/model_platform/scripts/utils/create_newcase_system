@@ -1,0 +1,349 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+# == Include utils ==
+source "$SCRIPTSROOT/utils/common"
+source "$SCRIPTSROOT/utils/hashtable"
+export PATH=$PATH:$SCRIPTSROOT/utils/
+# ====================
+
+# == Functions for this script only ==
+usage() {
+    echo "usage: create_newcase <config file>"
+}
+
+cleanup() {
+    hash_destroy
+    rm -rf /tmp/$$.fifo
+}
+
+error_exit() {
+    cleanup
+    echo 
+    echo "ERROR is detected. Fail to create the new simulation. Please fix the error!"
+    echo 
+    exit 1
+}
+
+function get_xml_entry
+{
+   cat "$1"|grep "<entry.*id=\"$2\""|sed "s#<entry\s*id=\"$2\"\s*value=\"\([^\"]*\).*#\1#g"
+}
+# =====================================
+
+# == Initialization ==
+hash_init
+SCRIPT_FIFO=/tmp/$$.fifo
+mkfifo $SCRIPT_FIFO
+# ====================
+
+if [ $# -lt 1 ]; then
+    usage
+    error_exit
+fi
+
+if [ ! -f "$1" ]; then
+    report_logs "ERROR" "Environment variable file \"$1\" doesn't exist or it is not a file. Please check."
+    error_exit
+fi
+
+source "$1"
+
+if [ ! -e "${CODEROOT}" ]; then
+    report_logs "ERROR" "Cannot find the CODEROOT: \"${CODEROOT}\".\nPlease set the CODEROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    error_exit 
+fi
+if [ ! -e "${DATAROOT}" ]; then
+    report_logs "ERROR" "Cannot find the DATAROOT: \"${DATAROOT}\".\nPlease set the DATAROOT through source register_inputdata.sh or register_inputdata.csh under the root directory of the input data"
+    error_exit 
+fi
+if [ ! -e "${CONFIGROOT}" ]; then
+    report_logs "ERROR" "Cannot find the CONFIGROOT: \"${CONFIGROOT}\".\nPlease set the CONFIGROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    error_exit 
+fi
+
+if [ "$COMPSET" == "" ]; then
+    report_logs "ERROR" "Environment variable COMPSET (the name of the corresponding experiment model) must be specified in the input parameter file. Please verify."
+    error_exit
+fi
+
+if [ "$CASEROOT" == "" ]; then
+    report_logs "ERROR" "Environment variable CASEROOT (the working directory of the new simulation) must be specified in the input parameter file. Please verify."
+    error_exit
+fi
+
+if [ "$MACH" == "" ]; then
+    report_logs "ERROR" "Environment variable MACH (the name of the computer to run the new simulation) must be specified in the input parameter file. Please verify."
+    error_exit
+fi
+
+if [ -e "$CASEROOT" ]; then
+    report_logs "ERROR" "CASEROOT \"$CASEROOT\" already exists. Please choose another directory."
+    error_exit
+fi
+
+#Check COMPSET
+if [ ! -f "${CONFIGROOT}/compset/${COMPSET}/compset.settings" ]; then
+    report_logs "ERROR" "Cannot find the configuration files of the specified compset: \"${COMPSET}\" under the directory \"${CONFIGROOT}/compset/\". Please check."
+    error_exit
+fi
+COMPSET_FILE="${CONFIGROOT}/compset/${COMPSET}/compset.settings"
+declare -a comp_name
+declare -a comp_type
+declare -a comp_realname
+declare -a lib_name
+echo "========== Models in this complist =========="
+while read line; do
+    if [ "$line" == "common" ]; then
+        read line
+        while true; do
+            read line
+            if [ "$line" == "}" ]; then break; fi
+            key=`trim "${line%\=*}"`
+            value=`trim "${line#$key*=}"`
+            case "$key" in
+                model)
+                i=${#comp_name[@]}
+                comp_name[i]="$value"
+                comp_type[i]="unknown"
+                comp_realname[i]="unknown"
+                hash_put "model_${value}_value" "grid" "unknown"
+                hash_put "model_${value}_value" "num_total_proc" "1"
+                hash_put "model_${value}_value" "num_thread" "1"
+                ;;
+                lib)
+                lib_name[${#lib_name[@]}]="$value"
+                ;;
+                _*)
+                hash_put common_param "${key:1}" "$value"
+                ;;
+                *)
+                ;;
+            esac
+        done
+        continue
+    fi
+
+    this_model="$line"
+    this_id=""
+    for ((i = 0; i < ${#comp_name[@]}; i++))
+    do
+    if [ "$this_model" == "${comp_name[i]}" ]; then
+        this_id=$i
+        break
+    fi
+    done
+    #echo $this_id
+    if [ "$this_id" == "" ]; then
+        report_logs "ERROR" "Model \"$this_model\" defined in ${COMPSET_FILE} is not used. Please verify."
+        error_exit
+    else
+        #param_key="model_${this_id}_other_param_key"
+        #param_value="model_${this_id}_other_param_value"
+        #eval "declare -a ${param_key}"
+        #eval "declare -a ${param_value}"
+        read line
+        while true; do
+            read line
+            if [ "$line" == "}" ]; then break; fi
+            key=`trim "${line%\=*}"`
+            value=`trim "${line#$key*=}"`
+            case "$key" in
+                realname)
+                comp_realname[this_id]="$value"
+                ;;
+                type)
+                comp_type[this_id]="$value"
+                ;;
+                grid|num_total_proc|num_x_proc|num_y_proc|num_thread)
+                hash_put "model_${this_model}_value" "$key" "$value"
+                ;;
+                _*)
+                hash_put "model_${this_model}_value" "${key:1}" "$value"
+                ;;
+                *)
+                ;;
+            esac
+        done
+    fi
+
+done < "${COMPSET_FILE}"
+
+
+#Check MACHINE
+if [ ! -f "${CONFIGROOT}/common/machine/${MACH}/env.${MACH}" ]; then
+    report_logs "ERROR" "Cannot find the configuration files of the specified machine: \"${MACH}\" under the directory \"${CONFIGROOT}/common/machine/\". Please check."
+    error_exit
+fi
+
+#Create case root
+echo "============ Creating directories ==========="
+mymkdir "$CASEROOT" 
+CASEROOT=$(readlink -f "$CASEROOT")
+export total_num_components=${#comp_name[*]}
+
+for (( i = 0; i < $total_num_components; i++ ))
+do
+    if [ "${comp_type[i]}" == "unknown" ]; then
+        report_logs "ERROR" "The type \"${comp_type[i]}\" of model \"${comp_name[i]}\" that is used in the common section of ${COMPSET_FILE} is not defined in the model definition section. Please verify."
+        error_exit
+    fi
+    if [ "${comp_realname[i]}" == "unknown" ]; then
+        report_logs "ERROR" "The real name \"${comp_realname[i]}\" model \"${comp_name[i]}\" that is used in the common section of ${COMPSET_FILE} is not defined in the model definition section. Please verify."
+        error_exit
+    fi
+done
+
+mymkdir "${CASEROOT}/config"
+mymkdir "${CASEROOT}/config/common"
+for (( i = 0; i < ${#comp_name[*]}; i++ )); do
+    mymkdir "${CASEROOT}/config/${comp_type[i]}/${comp_name[i]}"
+done
+for (( i = 0; i < ${#lib_name[*]}; i++ )); do
+    mymkdir "${CASEROOT}/config/lib/${lib_name[i]}"
+done
+
+mymkdir "${CASEROOT}/config/common/machine"
+mymkdir "${CASEROOT}/config/common/CCPL_configs"
+
+echo "========= Copying necessary scripts ========="
+mycopy "${SCRIPTSROOT}/configure" "${CASEROOT}/configure" "configure" || error_exit
+mycopy "${SCRIPTSROOT}/compile" "${CASEROOT}/compile" "compile" || error_exit
+mycopy "${SCRIPTSROOT}/clean" "${CASEROOT}/clean" "clean" || error_exit
+mycopy "${SCRIPTSROOT}/runcase" "${CASEROOT}/runcase" "runcase" || error_exit
+
+echo "======== Copying configuration files ========"
+
+#Copy configuration for compilation
+COMMON_ROOT=${CONFIGROOT}/common
+
+source ${COMMON_ROOT}/machine/${MACH}/env.${MACH}
+
+for (( i = 0; i < ${#comp_name[*]}; i++ ))
+do
+    MODEL_ROOT=${CONFIGROOT}/${comp_type[i]}/${comp_realname[i]}
+    MODEL_PATH=${CASEROOT}/config/${comp_type[i]}/${comp_name[i]}
+    if [ -f ${MODEL_ROOT}/compiler.cfg ]; then
+        mycopy "${MODEL_ROOT}/compiler.cfg" "${MODEL_PATH}/compiler.cfg" "compiler.cfg of ${comp_name[i]}"  || error_exit
+    else
+        echo -n "  Creating default compiler.cfg for ${comp_name[i]} ... "
+        touch ${MODEL_PATH}/compiler.cfg
+        echo "incldue \$(COMMON_COMPILER)" > ${MODEL_PATH}/compiler.cfg
+        echo "done"
+    fi
+    mycopy "${MODEL_ROOT}/build.sh" "${MODEL_PATH}/build.sh" "build.sh of ${comp_name[i]}" || error_exit
+    mycopy "${MODEL_ROOT}/form_src.sh" "${MODEL_PATH}/form_src.sh" "form_src.sh of ${comp_name[i]}" || error_exit
+    mycopy "${MODEL_ROOT}/config.sh" "${MODEL_PATH}/config.sh" "config.sh of ${comp_name[i]}" || error_exit
+    if [ -x "${MODEL_ROOT}/clean.sh" ]; then
+        mycopy "${MODEL_ROOT}/clean.sh" "${MODEL_PATH}/clean.sh" "clean.sh of ${comp_name[i]}" || error_exit
+    fi
+    if [ -f ${MODEL_ROOT}/private_field_attribute.cfg ]; then
+        mycopy "${MODEL_ROOT}/private_field_attribute.cfg" "${MODEL_PATH}/private_field_attribute.cfg" "private_field_attribute.cfg of ${comp_name[i]}"  || error_exit
+    fi
+    if [ -f ${MODEL_ROOT}/field_buf_register.cfg ]; then
+        mycopy "${MODEL_ROOT}/field_buf_register.cfg" "${MODEL_PATH}/field_buf_register.cfg" "field_buf_register.cfg of ${comp_name[i]}"  || error_exit
+    fi
+    cp -r "${MODEL_ROOT}"/* "${MODEL_PATH}"/
+done
+
+for (( i = 0; i < ${#lib_name[*]}; i++ ))
+do
+    LIB_ROOT=${CONFIGROOT}/lib/${lib_name[i]}
+    LIB_PATH=${CASEROOT}/config/lib/${lib_name[i]}
+    mycopy "${LIB_ROOT}/build.sh" "$LIB_PATH/build.sh" "build.sh" || error_exit
+    mycopy "${LIB_ROOT}/form_src.sh" "${LIB_PATH}/form_src.sh" "form_src.sh of libraries" || error_exit
+    if [ -f ${LIB_ROOT}/compiler.cfg ]; then
+        mycopy "${LIB_ROOT}/compiler.cfg" "${LIB_PATH}/compiler.cfg" "compiler.cfg of libraries" || error_exit
+    else
+        echo -n "  Creating default compiler.cfg for libraries ... "
+        touch ${LIB_PATH}/compiler.cfg
+        echo "include \$(COMMON_COMPILER)" > ${LIB_PATH}/compiler.cfg
+        echo "done"
+    fi
+done
+
+if [ -d "${CONFIGROOT}/compset/${COMPSET}/coupler" ]; then
+    echo -n "  Copying running configurations of C-Coupler ... "
+    cp -rf "${CONFIGROOT}/compset/${COMPSET}/coupler"/* "$CASEROOT/config/common/CCPL_configs"/
+    echo "done"
+fi
+
+#Copy makefiles
+mycopydir "${CONFIGROOT}/common/machine/" "${CASEROOT}/config/common/machine/" "machines" || error_exit
+
+if [ -f "${CONFIGROOT}/compset/${COMPSET}/create.sh" ]; then
+    if [ -x "${CONFIGROOT}/compset/${COMPSET}/create.sh" ]; then
+        "${CONFIGROOT}/compset/${COMPSET}/create.sh" $1
+        if [ $? -ne 0 ] ; then
+            error_exit
+        fi
+    else
+        report_logs "ERROR" "The script \"${CONFIGROOT}/compset/${COMPSET}/create.sh\" exists but it cannot be run."
+    fi
+fi
+
+echo "======= Creating configuration files ========"
+cat > "${CASEROOT}/config/common/env" << EOF
+COMPSET=${COMPSET}
+MACH=${MACH}
+EOF
+
+cat > "${CASEROOT}/config/common/case.conf" << EOF
+system
+{
+    compset=${COMPSET}
+    mach=${MACH}
+    libs=${lib_name[*]}
+}
+common
+{
+EOF
+
+hash_keys common_param > $SCRIPT_FIFO &
+while read index_key
+do
+    echo "    ${index_key}=$(hash_get common_param ${index_key})" >> "${CASEROOT}/config/common/case.conf"
+done < $SCRIPT_FIFO
+
+cat >> "${CASEROOT}/config/common/case.conf" << EOF
+}
+EOF
+
+
+for (( i = 0; i < ${#comp_name[*]}; i++ )); do
+    this_comp="${comp_name[i]}"
+    cat >> "${CASEROOT}/config/common/case.conf" << EOF
+${comp_name[i]} : ${comp_type[i]} : ${comp_realname[i]}
+{
+EOF
+    hash_keys "model_${this_comp}_value" > $SCRIPT_FIFO &
+    while read index_key
+    do
+        echo "    ${index_key}=$(hash_get model_${this_comp}_value ${index_key})" >> "${CASEROOT}/config/common/case.conf"
+    done < $SCRIPT_FIFO
+    cat >> "${CASEROOT}/config/common/case.conf" << EOF
+}
+EOF
+done
+
+rm -rf "${CASEROOT}/config/common/.original.case.conf"
+for section in "common_param" "model_${comp_name[0]}_value"
+do
+    hash_keys "$section" > $SCRIPT_FIFO &
+    while read index_key
+    do
+        echo "${index_key}=$(hash_get $section ${index_key})" >> "${CASEROOT}/config/common/.original.case.conf"
+    done < $SCRIPT_FIFO
+done
+
+echo "  Done."
+
+report_logs "NOTICE" "Please goto the working directory \"$CASEROOT\" for your simulations."
+
+cleanup

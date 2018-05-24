@@ -1,0 +1,60 @@
+wrf_grid_file = add_nc_file("grids/geo_em.d01.nc", "r")
+wrf_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", wrf_grid_file%west_east)
+wrf_1D_grid_lat = new_1D_grid("lat", "degrees", wrf_grid_file%south_north)
+wrf_h2D_grid = combine_grids(wrf_1D_grid_lon, wrf_1D_grid_lat)
+wrf_h2D_grid%center%lon = read_field(wrf_grid_file, "XLONG_M") 
+wrf_h2D_grid%center%lat = read_field(wrf_grid_file, "XLAT_M")
+
+
+wave_grid_file = add_nc_file("grids/NCEP_p_wa_2011060812.nc", "r")
+
+wave_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", wave_grid_file%lon)
+wave_1D_grid_lat = new_1D_grid("lat", "degrees", wave_grid_file%lat)
+wave_1D_grid_lev = new_1D_grid("lev", "m", wave_grid_file%dep)
+wave_1D_grid_time = new_1D_grid("time", "hours", wave_grid_file%time)
+wave_1D_grid_lon%center%lon = read_field(wave_grid_file, "lon")
+wave_1D_grid_lat%center%lat = read_field(wave_grid_file, "lat")
+wave_1D_grid_lev%center%lev = read_field(wave_grid_file, "dep")
+wave_grid = combine_grids(wave_1D_grid_lon, wave_1D_grid_lat)
+wave_3D_grid = combine_grids(wave_grid, wave_1D_grid_lev)
+wave_4D_grid = combine_grids(wave_3D_grid, wave_1D_grid_time)
+
+bv_on_wave_grid = read_field(wave_4D_grid, wave_grid_file, "outbv")
+wave_3D_grid%mask = extract_mask(bv_on_wave_grid, "1.e+10f", "1.e+30f") 
+wave_grid%mask = extract_mask(bv_on_wave_grid, "1.e+10f", "1.e+30f") 
+
+pom_grid_file = add_nc_file("grids/NCEP_k_cu_2011060812.nc", "r")
+
+pom_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", pom_grid_file%lon)
+pom_1D_grid_lat = new_1D_grid("lat", "degrees", pom_grid_file%lat)
+pom_1D_grid_lev = new_1D_grid("lev", "m", pom_grid_file%dep)
+pom_1D_grid_lev_sigma = new_1D_grid("lev", "up", pom_grid_file%dep)
+pom_1D_grid_lon%center%lon = read_field(pom_grid_file, "lon")
+pom_1D_grid_lat%center%lat = read_field(pom_grid_file, "lat")
+pom_1D_grid_lev_sigma%center%lev = read_field(pom_grid_file, "dep")
+pom_grid = combine_grids(pom_1D_grid_lon, pom_1D_grid_lat)
+pom_3D_grid = combine_grids(pom_grid, pom_1D_grid_lev)
+
+pom_topo_field_file = add_nc_file("grids/big5.nc", "r")
+pom_topo_field = read_field(pom_grid, pom_topo_field_file, "TOPO")
+pom_grid%mask = extract_mask(pom_topo_field, "1.e+06f", "1.e+10f")
+pom_3D_grid%center%lev = lev_coord_from_sigma(pom_topo_field, "0", pom_1D_grid_lev_sigma, "-1.0")
+
+bilinear_remap_masnum_to_pom = new_operator("bilinear", wave_grid, pom_grid)
+linear_remap = new_operator("linear", wave_1D_grid_lev, pom_1D_grid_lev)
+remap_strategy_masnum_to_pom = combine_operators(bilinear_remap_masnum_to_pom, linear_remap)
+wgts_file_masnum_to_pom = add_bin_file("./remap_weights_files/remap_weights_files_by_CoR/masnum_pom_3D_bilinear_linear_remap_wgts.bin", "r")
+wave_cur_3D_wgts = read_remap_wgts(remap_strategy_masnum_to_pom, wave_3D_grid, pom_3D_grid, wgts_file_masnum_to_pom, "C-Coupler")
+
+
+bilinear_remap_wrf_to_masnum = new_operator("bilinear", wrf_h2D_grid, wave_grid)
+remap_strategy_wrf_to_masnum = combine_operators(bilinear_remap_wrf_to_masnum)
+wgts_file_wrf_to_masnum = add_bin_file("./remap_weights_files/remap_weights_files_by_CoR/wrf_masnum_bilinear_remap_wgts.bin", "r")
+wrf_to_masnum_wgts = read_remap_wgts(remap_strategy_wrf_to_masnum, wrf_h2D_grid, wave_grid, wgts_file_wrf_to_masnum, "C-Coupler")
+
+
+bilinear_remap_wrf_to_pom = new_operator("bilinear", wrf_h2D_grid, pom_grid)
+remap_strategy_wrf_to_pom = combine_operators(bilinear_remap_wrf_to_pom)
+wgts_file_wrf_to_pom = add_bin_file("./remap_weights_files/remap_weights_files_by_CoR/wrf_pom_bilinear_remap_wgts.bin", "r")
+wrf_to_pom_wgts = read_remap_wgts(remap_strategy_wrf_to_pom, wrf_h2D_grid, pom_grid, wgts_file_wrf_to_pom, "C-Coupler")
+

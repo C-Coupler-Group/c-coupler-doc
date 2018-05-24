@@ -1,0 +1,100 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/12/03. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+source "${CASEROOT}/config/common/env"
+
+LOCALFILELIST="${CASEROOT}/config/common/reproducibility/input_data_list"
+
+sourcefile=$(readlink -f "$1")
+dataroot=$(readlink -f "$DATAROOT")
+export PATH=$PATH:$SCRIPTSROOT/utils/
+
+if [ -z "$sourcefile" ]; then
+    report_logs "ERROR" "Input data file \"$1\" does not exist! Please check." $CONFIG_LOG_FILE
+    exit 1
+fi
+
+if [ ! -e "$sourcefile" ]; then
+    report_logs "ERROR" "Input data file \"$1\" does not exist! Please check." $CONFIG_LOG_FILE
+    exit 1
+fi
+
+checksum_md5sum() {
+    md5sum "$1"|awk '{print $1}'
+}
+
+checksum_md5() {
+    md5 "$1"|awk '{print $NF}'
+}
+
+if [ "$CHECK_SUM" == "true" ]; then
+    if which md5 > /dev/null 2>&1; then
+        CHECKSUM_CMD="checksum_md5"
+    elif which md5sum > /dev/null 2>&1; then
+        CHECKSUM_CMD="checksum_md5sum"
+    else
+        report_logs "ERROR" "Md5 or md5sum is required to calculate the checksum of input data files, neither of them is found. Please check whether these tools have been installed on your computer." $CONFIG_LOG_FILE
+        exit 1
+    fi
+fi
+
+
+COPY_DATA="false"
+if (( $# >= 3 )); then
+    if [ "$3" == "copy" ]; then
+        COPY_DATA="true"
+    fi
+fi
+
+
+# Check checksum tools
+if (( $# >= 2 )); then
+    if [ "$COPY_DATA" == "false" ]; then
+        ln -fs "$sourcefile" "$2"
+    else
+        cp -rf "$sourcefile" "$2" > /dev/null 2>&1
+    fi
+fi
+if [ -d "$sourcefile" ]; then
+    ls "$sourcefile"|while read line
+    do
+        "$0" "$sourcefile/$line"
+    done
+else
+    fpath=$(echo "$sourcefile"|sed "s#^$dataroot\/##g")
+    if [ -f "$LOCALFILELIST" ]; then
+        if [ $(cat "$LOCALFILELIST"|grep -Fcx "$fpath") -ne 0 -o $(cat "$LOCALFILELIST"|grep -Fc "$fpath ") -ne 0 ]; then
+            exit
+        fi
+    fi
+    echo -n "$fpath" >> "$LOCALFILELIST"
+    if [ "$CHECK_SUM" == "true" ]; then
+        echo -n " " >> "$LOCALFILELIST"
+        echo -n `$CHECKSUM_CMD "$sourcefile"` >> "$LOCALFILELIST"
+        if which svn > /dev/null 2>&1; then
+            if svn info "$sourcefile" > /dev/null 2>&1; then
+                if [ $(svn diff "$sourcefile"|wc|awk '{print $1}') -eq 0 ]; then
+                    echo -n " " >> "$LOCALFILELIST"
+                    echo -n `svn info "$sourcefile"|grep ^Revision|awk '{print $2}'` >> "$LOCALFILELIST"
+                    echo -n " " >> "$LOCALFILELIST"
+                    echo `svn info "$sourcefile"|grep "^Repository Root:"|awk '{print $3}'` >> "$LOCALFILELIST"
+                else
+                    report_logs "WARNING" "Input data file \"$sourcefile\" is different from the file version managed by SVN! Its SVN information will not be recorded in the simulation setting package and as a result it may not be able to be successfully downloaded in the future reproductions of the simulation. This problem can be fixed through committing the new version of the data file to the SVN server."  $CONFIG_LOG_FILE
+                    echo "" >> "$LOCALFILELIST"
+                fi
+            else
+                echo "" >> "$LOCALFILELIST"
+            fi
+        else
+            echo "" >> "$LOCALFILELIST"
+        fi
+    else
+        echo "" >> "$LOCALFILELIST"
+    fi
+fi

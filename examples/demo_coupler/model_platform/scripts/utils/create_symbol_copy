@@ -1,0 +1,35 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2014/06/05. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+srcdir=$(readlink -f "$1")
+destdir=$(readlink -f "$2")
+
+if [ -e "$destdir" ]; then
+	if [ -d "$destdir" ]; then
+		cd "$destdir"
+		find -type l -exec unlink "{}" \;
+	else
+		echo "$destdir exists but not directory, abort."
+		exit 1
+	fi
+fi
+
+cd $srcdir
+find -type d|while read filename
+do
+	realfilepath=$(readlink -f "$filename")
+	mkdir -p "$destdir/$filename"
+done
+
+find ! -type d|while read filename
+do
+	path=$(dirname $filename)
+	realfilepath=$(readlink -f "$filename")
+	ln -fs "$realfilepath" "$destdir/$path/"
+done

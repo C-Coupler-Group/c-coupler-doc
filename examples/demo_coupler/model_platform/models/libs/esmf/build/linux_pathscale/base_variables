@@ -1,0 +1,140 @@
+# $Id: base_variables,v 1.2.2.1 2006/01/13 23:36:14 jeff Exp $ 
+#
+# Default MPI setting.
+#
+ifndef ESMF_COMM
+  export ESMF_COMM := mpiuni
+endif
+ifeq ($(ESMF_COMM),default)
+  export ESMF_COMM := mpiuni
+endif
+
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+AR		   = ar
+AR_FLAGS	   = cr
+RM		   = rm -f
+OMAKE		   = ${MAKE}
+RANLIB		   = ranlib
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+
+#
+# Common compiler flags
+#
+COM_MEMCHECK_FLAG      =
+COM_FULLPATH_FLAG      =
+COM_DEBUG_FLAG         = -g
+COM_ALL_DEBUG_FLAGS    = -g $(COM_MEMCHECK_FLAG) $(COM_FULLPATH_FLAG)
+COM_MAXMEM_FLAG        =
+COM_NOWARN_FLAG        =
+COM_SPILL_FLAG         =
+COM_OPT_FLAG           = -O3
+COM_ALL_OPT_FLAGS      = -O3 $(COM_MAXMEM_FLAG) $(COM_NOWARN_FLAG) $(COM_SPILL_FLAG)
+COM_PLAIN_FLAG         =
+
+#
+# C compiler flags
+#
+RESTRICTED_POINTERS     =
+NO_AUTO_PARALLEL        =
+NO_INLINING             =
+NO_LINE_DIRECTIVES      =
+
+#
+# Fortran compiler flags
+#
+REAL8                   =
+STRICT                  =
+#FPPOPTS                +=
+FPP_PREFIX              = -WF,
+FPPFLAGS                = $(addprefix $(FPP_PREFIX), $(FPPOPTS))
+FPPFLAGS                += $(addprefix $(FPP_PREFIX), $(CPPFLAGS))
+F_FREECPP               =
+F_FIXCPP                =
+F_FREENOCPP             =
+F_FIXNOCPP              =
+
+#
+# ######################### C and Fortran compiler ########################
+#
+#
+# compiler section
+#
+ifeq ($(ESMF_COMM),mpich)
+
+  # with mpich, have to call wrappers instead of compilers directly
+  # for now, assume they are built with gcc settings and not around xlc
+  C_CC                    = mpicc
+  C_CCV                   = $(C_CC) --version
+  CXX_CC                  = mpiCC
+  CXX_CCV                 = $(CXX_CC) --version
+  C_FC                    = mpif90 -fno-second-underscore
+  C_FCV                   = $(C_FC) --version
+
+  CXX_LIB_PATH            =
+  CXX_SYS_LIB		  = -ldl -lc -lg2c -lm
+  C_CXXF90LIBS            = -L. $(CXX_LIB_PATH) -lm -lxlf90_r -lstdc++
+  C_F90CXXLIBS            = -L. $(CXX_LIB_PATH) -lxlf90_r -lstdc++
+
+else
+
+  # non-mpich section: lam or mpiuni
+  C_CC			= pathcc 
+  C_CCV			= ${C_CC} -V
+  CXX_CC		= pathCC 
+  CXX_CCV		= ${CXX_CC} -V
+  C_FC			= pathf90 -fno-second-underscore
+  C_FCV			= ${C_FC} -V 
+
+  CXX_LIB_PATH          =
+  CXX_SYS_LIB		= -ldl -lc -lg2c -lm
+  C_CXXF90LIBS          = -L. $(CXX_LIB_PATH) -lm -lxlf90_r -lstdc++
+  C_F90CXXLIBS          = -L. $(CXX_LIB_PATH) -lxlf90_r -lstdc++
+
+endif
+
+# settings independent of which compiler is selected
+CXX_FC                  = $(C_FC)
+C_FC_MOD                = -I
+C_CLINKER               = $(C_CC)
+C_FLINKER               = $(C_FC)
+CXX_CLINKER             = $(CXX_CC)
+CXX_FLINKER             = $(CXX_FC)
+
+C_SYS_LIB	  	= -ldl -lc -lg2c -lm
+
+SLFLAG			= -Wl,-rpath,
+C_CLINKER_SLFLAG        = $(SLFLAG)
+C_FLINKER_SLFLAG        = $(SLFLAG)
+CXX_CLINKER_SLFLAG      = $(SLFLAG)
+CXX_FLINKER_SLFLAG      = $(SLFLAG)
+FCPPFLAGS               = ${ESMC_INCLUDE} ${PCONF} ${ESMC_PARCH} ${FPPFLAGS} $(FCPP_EXHAUSTIVE)
+
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS             = $(COM_ALL_DEBUG_FLAGS)
+G_FOPTFLAGS             = $(COM_ALL_DEBUG_FLAGS)
+GCXX_COPTFLAGS          = $(COM_ALL_DEBUG_FLAGS)
+GCXX_FOPTFLAGS          = $(COM_ALL_DEBUG_FLAGS)
+GCOMP_COPTFLAGS         = $(COM_ALL_DEBUG_FLAGS)
+GCOMP_FOPTFLAGS         = $(COM_ALL_DEBUG_FLAGS)
+
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS             = $(COM_ALL_OPT_FLAGS)
+O_FOPTFLAGS             = $(COM_OPT_FLAG) $(COM_WARN_FLAG)
+OCXX_COPTFLAGS          = $(COM_ALL_OPT_FLAGS)
+OCXX_FOPTFLAGS          = $(COM_OPT_FLAG) $(COM_WARN_FLAG)
+OCOMP_COPTFLAGS         = $(COM_ALL_OPT_FLAGS)
+OCOMP_FOPTFLAGS         = $(COM_OPT_FLAG) $(COM_WARN_FLAG)
+
+C_CXXF90LD              = ${CXX_CC}
+C_F90CXXLD              = ${CXX_FC}
+
+PARCH		   = linux_pathscale
+
+SL_F_LINKER = $(F90CXXLD)
+SL_C_LINKER = $(CXXF90LD)
+
+include ${ESMF_DIR}/build/common_variables
+

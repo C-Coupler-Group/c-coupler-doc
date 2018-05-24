@@ -1,0 +1,4 @@
+# $Id: README,v 1.1.18.4 2002/04/25 17:14:19 dneckels Exp $
+  The build directory contains all the base makefiles that are 
+included in your actual makefile. See the users manual for a 
+description of all the flags and rules in the makefiles.

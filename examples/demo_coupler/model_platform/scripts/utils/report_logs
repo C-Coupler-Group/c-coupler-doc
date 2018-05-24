@@ -1,0 +1,40 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/12/03. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+
+if [ $# -lt 2 ]; then
+    echo -e "\n[ERROR]: C-Coupler platform error when using report_logs: parameters are not enough.\n" 
+    exit 1
+fi
+
+if [ "$1" == "ERROR" ]; then
+    output_string="\n[ERROR]: $2\n"
+elif [ "$1" == "WARNING" ]; then 
+    output_string="\n[WARNING]: $2\n"
+elif [ "$1" == "NOTICE" ]; then 
+    output_string="\n[NOTICE]: $2\n"
+else
+    echo -e "\n[ERROR]: C-Coupler platform error when using report_logs: $1 is not a right report type.\n" 
+    exit 1
+fi
+
+if [ $# -eq 3 ]; then
+    if [ -f "$3" ]; then
+        if [ "$1" == "WARNING" ]; then 
+            echo -e "$output_string" >> "$3"
+        else
+            echo -e "$output_string" 2>&1 | tee -a "$3"
+        fi
+    else
+        echo -e "\n[ERROR]: C-Coupler platform error when using report_logs: log file \"$3\" does not exist. Please check. \n" 
+    fi
+else 
+    echo -e "$output_string"
+fi
+

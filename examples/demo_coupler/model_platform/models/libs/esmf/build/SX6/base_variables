@@ -1,0 +1,69 @@
+# $Id: base_variables,v 1.1.8.1 2003/12/04 23:05:11 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+#LD		   = sxld 
+LD		   = sxmpif90
+AR		   = sxar
+AR_FLAGS	   = cr
+RM		   = rm -f
+RANLIB		   = false
+OMAKE		   = ${MAKE}
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+# ######################### C and Fortran compiler ########################
+#
+PROF		   = -ftrace -P stack
+DEBUG		   = -g 
+#INCLUDE		   = -I/SX/usr/include -I/SX/usr/include/sys
+OPTIMIZE	   = -Cvopt
+OPTIMIZE	   =
+C_CC		   = sxmpic++ -struct no_loop
+C_FC		   = sxmpif90 
+C_FC_MOD           = -I
+C_CLINKER	   = sxmpic++ -struct no_loop
+C_FLINKER	   = sxmpif90  
+C_CCV		   = sxmpic++ -V -c struct no_loop
+C_FCV              = sxmpif90 -V -c
+C_SYS_LIB	   = 
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+G_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = $(OPTIMIZE) $(PROF) $(INCLUDE)
+O_FOPTFLAGS	   = $(OPTIMIZE) $(PROF) $(INCLUDE)
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = sxmpic++ -struct no_loop
+CXX_FC		   = sxmpif90 
+CXX_CLINKER_SLFLAG = 
+CXX_FLINKER_SLFLAG = 
+CXX_CLINKER	   = sxmpic++ -struct no_loop
+CXX_FLINKER	   = sxmpif90
+CXX_CCV		   = sxmpic++ -V -c
+CXX_SYS_LIB	   = 
+
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+GCXX_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   = $(OPTIMIZE) $(PROF)
+OCXX_FOPTFLAGS	   = $(OPTIMIZE) $(PROF)
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+GCOMP_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   = $(OPTIMIZE) $(PROF)
+OCOMP_FOPTFLAGS	   = $(OPTIMIZE) $(PROF)
+# ########################### Alice install options ###########################
+#
+
+##################################################################################
+#
+#   Alice installers should very rarely ever need to edit anything below this 
+#
+##################################################################################
+
+PARCH		   = SX6
+
+include ${ESMF_DIR}/build/common_variables

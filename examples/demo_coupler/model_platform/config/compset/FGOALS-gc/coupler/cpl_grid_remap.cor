@@ -1,0 +1,90 @@
+
+gamil_grid_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc", "r")
+
+gamil_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "128")
+gamil_1D_grid_lat = new_1D_grid("lat", "degrees", "60")
+gamil_1D_grid_lev4 = new_1D_grid("lev", "levels", "4")
+gamil_1D_grid_lev26 = new_1D_grid("lev", "levels", "26")
+gamil_1D_grid_lev27 = new_1D_grid("lev", "levels", "27")
+gamil_1D_grid_tracer = new_1D_grid("tracer", "tracers", "5")
+gamil_1D_grid_tracer4 = new_1D_grid("tracer", "tracers", "4")
+gamil_1D_grid_tracer27 = new_1D_grid("tracer", "tracers", "27")
+gamil_grid = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat)
+gamil_3D_grid_lev4 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev4)
+gamil_3D_grid_lev26 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26)
+gamil_3D_grid_lev27 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev27)
+gamil_3D_grid_tracer = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_tracer)
+gamil_4D_grid_q3 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26, gamil_1D_grid_tracer)
+gamil_4D_grid_lev27_tracer27 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev27, gamil_1D_grid_tracer27)
+gamil_4D_grid_lev26_tracer4 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26, gamil_1D_grid_tracer4)
+gamil_grid%center%lon = read_field(gamil_grid_file, "xc_b")
+gamil_grid%center%lat = read_field(gamil_grid_file, "yc_b")
+gamil_grid%vertex%lon = read_field(gamil_grid_file, "xv_b", "4")
+gamil_grid%vertex%lat = read_field(gamil_grid_file, "yv_b", "4")
+gamil_grid%mask = read_field(gamil_grid_file, "mask_b")
+
+
+clm_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "128")
+clm_1D_grid_lat = new_1D_grid("lat", "degrees", "60")
+clm_grid = combine_grids(clm_1D_grid_lon, clm_1D_grid_lat)
+clm_grid%center%lon = read_field(gamil_grid_file, "xc_b")
+clm_grid%center%lat = read_field(gamil_grid_file, "yc_b")
+clm_grid%vertex%lon = read_field(gamil_grid_file, "xv_b", "4")
+clm_grid%vertex%lat = read_field(gamil_grid_file, "yv_b", "4")
+clm_grid%mask = read_field(gamil_grid_file, "mask_b")
+
+
+river_grid_file = add_nc_file("grids/R05_Grid.nc", "r")
+
+river_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "720")
+river_1D_grid_lat = new_1D_grid("lat", "degrees", "360")
+river0.5x0.5_grid = combine_grids(river_1D_grid_lon, river_1D_grid_lat, river_grid_file%grid_size)
+river0.5x0.5_grid%center%lon = read_field(river_grid_file, "grid_center_lon")
+river0.5x0.5_grid%center%lat = read_field(river_grid_file, "grid_center_lat")
+river0.5x0.5_grid%vertex%lon = read_field(river_grid_file, "grid_corner_lon", river_grid_file%grid_corners)
+river0.5x0.5_grid%vertex%lat = read_field(river_grid_file, "grid_corner_lat", river_grid_file%grid_corners)
+river0.5x0.5_grid%mask = read_field(river_grid_file, "grid_imask")
+
+
+licom_grid_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc", "r")
+
+licom_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "360")
+licom_1D_grid_lat = new_1D_grid("lat", "degrees", "196")
+licom_grid = combine_grids(licom_1D_grid_lon, licom_1D_grid_lat)
+licom_grid%center%lon = read_field(licom_grid_file, "xc_a")
+licom_grid%center%lat = read_field(licom_grid_file, "yc_a")
+licom_grid%vertex%lon = read_field(licom_grid_file, "xv_a", "4")
+licom_grid%vertex%lat = read_field(licom_grid_file, "yv_a", "4")
+licom_grid%mask = read_field(licom_grid_file, "mask_a")
+
+cice_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "360")
+cice_1D_grid_lat = new_1D_grid("lat", "degrees", "196")
+cice_grid = combine_grids(cice_1D_grid_lon, cice_1D_grid_lat)
+cice_grid%center%lon = read_field(licom_grid_file, "xc_a")
+cice_grid%center%lat = read_field(licom_grid_file, "yc_a")
+cice_grid%vertex%lon = read_field(licom_grid_file, "xv_a", "4")
+cice_grid%vertex%lat = read_field(licom_grid_file, "yv_a", "4")
+cice_grid%mask = read_field(licom_grid_file, "mask_a")
+
+gamil_to_licom_bilinear_optr = new_operator("bilinear", gamil_grid, licom_grid)
+gamil_to_licom_bilinear_scheme = combine_operators(gamil_to_licom_bilinear_optr)
+gamil_to_licom_bilinear_wgts_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_gamil128x60_to_licomeq1x1_bilin_091022.nc", "r")
+gamil_to_licom_bilinear_wgts = read_remap_wgts(gamil_to_licom_bilinear_scheme, gamil_grid, licom_grid, gamil_to_licom_bilinear_wgts_file, "SCRIP")
+
+
+gamil_to_licom_conserv_optr = new_operator("conserv_2D", gamil_grid, licom_grid)
+gamil_to_licom_conserv_scheme = combine_operators(gamil_to_licom_conserv_optr)
+gamil_to_licom_conserv_wgts_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_gamil128x60_to_licomeq1x1_aave_091022.nc", "r")
+gamil_to_licom_conserv_wgts = read_remap_wgts(gamil_to_licom_conserv_scheme, gamil_grid, licom_grid, gamil_to_licom_conserv_wgts_file, "SCRIP")
+
+river_to_licom_conserv_optr = new_operator("conserv_2D", river0.5x0.5_grid, licom_grid)
+river_to_licom_conserv_scheme = combine_operators(river_to_licom_conserv_optr)
+river_to_licom_conserv_wgts_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_r05_to_eq1x1_aave_090105.nc", "r")
+river_to_licom_conserv_wgts = read_remap_wgts(river_to_licom_conserv_scheme, river0.5x0.5_grid, licom_grid, river_to_licom_conserv_wgts_file, "SCRIP")
+
+licom_to_gamil_conserv_optr = new_operator("conserv_2D", licom_grid, gamil_grid)
+licom_to_gamil_conserv_scheme = combine_operators(licom_to_gamil_conserv_optr)
+licom_to_gamil_conserv_wgts_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc", "r")
+licom_to_gamil_conserv_wgts = read_remap_wgts(licom_to_gamil_conserv_scheme, licom_grid, gamil_grid, licom_to_gamil_conserv_wgts_file, "SCRIP")
+
+

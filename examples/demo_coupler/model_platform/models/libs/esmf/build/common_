@@ -1,0 +1,4 @@
+# $Id: common_,v 1.1.18.4 2002/04/25 17:14:19 dneckels Exp $
+ESMC_LANGUAGE = C
+ESMC_SCALAR   = l
+

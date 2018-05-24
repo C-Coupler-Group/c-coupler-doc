@@ -1,0 +1,16 @@
+20170913-103703 cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc 232c16cd195a476bd09e3e225815036d 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/ozone/Ozone_CMIP5_ACC_SPARC_1850-2099_RCP2.6_T3M_O3.nc 4e74901df171dd655b53d805829b2525 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/boundary_condition/bc.128x60_1870-2009_hadley_taylor.nc fe464f4abff044cba58f906c4747e048 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/radiation/abs_ems_factors_fastvx.052001.nc 8c752c656079ca3720ae520241ca954a 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/aerosol/Aerosol1850-2105RCP26gamil.nc 179c4042a765647e00e3d6ac463f785c 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/initial_condition/amip_ic.gamil.128x060.0011-01-01-00000.nc 8a0587fc932ee1c23a186e877a7e2eb1 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/lnd/pft-physiology aed0752e06fde80853f1d0c62bdfaa11 857 http://develop-svn.c-coupler.org/svn/coupler
+20170913-103703 atm/GAMIL2.0_128x60/lnd/surface-data.128x060.nc 8f25545960ee9dd7287852d4a70263aa 857 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc 232c16cd195a476bd09e3e225815036d 849 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/ozone/Ozone_CMIP5_ACC_SPARC_1850-2099_RCP2.6_T3M_O3.nc 4e74901df171dd655b53d805829b2525 849 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/boundary_condition/bc.128x60_1870-2009_hadley_taylor.nc fe464f4abff044cba58f906c4747e048 850 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/radiation/abs_ems_factors_fastvx.052001.nc 8c752c656079ca3720ae520241ca954a 849 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/aerosol/Aerosol1850-2105RCP26gamil.nc 179c4042a765647e00e3d6ac463f785c 849 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/initial_condition/amip_ic.gamil.128x060.0011-01-01-00000.nc 8a0587fc932ee1c23a186e877a7e2eb1 849 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/lnd/pft-physiology aed0752e06fde80853f1d0c62bdfaa11 855 http://develop-svn.c-coupler.org/svn/coupler
+20150129-105326 atm/GAMIL2.0_128x60/lnd/surface-data.128x060.nc 8f25545960ee9dd7287852d4a70263aa 855 http://develop-svn.c-coupler.org/svn/coupler

@@ -1,0 +1,8 @@
+export ENSEMBLE_NUM=0
+export ENSEMBLE_IDX=-1
+export LIBROOT=/home/sunchao/demo_coupler/model_experiments/ocn_demo/run/lib
+export INCROOT=/home/sunchao/demo_coupler/model_experiments/ocn_demo/run/lib/include
+export COMMON_COMPILER=/home/sunchao/demo_coupler/model_experiments/ocn_demo/config/common/machine/generic_linux/common_compiler.generic_linux.cfg
+export OS=Linux
+export GMAKE_J=8
+export SUBMITTER=mpi

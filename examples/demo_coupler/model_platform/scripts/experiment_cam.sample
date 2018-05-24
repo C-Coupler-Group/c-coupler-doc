@@ -1,0 +1,5 @@
+COMPSET=CESM1_0_5-sole
+CASEROOT="/home/liuli/git_checkout/model_experiments/CESM_experiments/CESM1.0.5_CAM5_AMIP"
+MACH=generic_linux
+CESM_RES=1.9x2.5_1.9x2.5
+CESM_COMPSET=F_AMIP_CAM5

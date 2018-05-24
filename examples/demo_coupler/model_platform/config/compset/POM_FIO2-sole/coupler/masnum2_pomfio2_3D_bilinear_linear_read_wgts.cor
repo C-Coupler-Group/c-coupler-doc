@@ -1,0 +1,38 @@
+
+masnum_grid_file = add_nc_file("grids/WaveK_topo.nc", "r")
+
+masnum_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", masnum_grid_file%lon)
+masnum_1D_grid_lat = new_1D_grid("lat", "degrees", masnum_grid_file%lat)
+masnum_1D_grid_lon%center%lon = read_field(masnum_grid_file, "lon")
+masnum_1D_grid_lat%center%lat = read_field(masnum_grid_file, "lat")
+masnum_h2D_grid = combine_grids(masnum_1D_grid_lon, masnum_1D_grid_lat)
+masnum_topo_field = read_field(masnum_h2D_grid, masnum_grid_file, "depth")
+masnum_h2D_grid%mask = extract_mask(masnum_topo_field, "1.e+9f", "1.e+11f") 
+
+
+masnum_lev_file = add_nc_file("grids/masnum2_40_lev_grid.nc", "r")
+masnum_1D_grid_lev = new_1D_grid("lev", "m", masnum_lev_file%dep)
+masnum_1D_grid_lev%center%lev = read_field(masnum_lev_file, "dep")
+masnum_3D_grid = combine_grids(masnum_h2D_grid, masnum_1D_grid_lev)
+
+pom_grid_file = add_nc_file("grids/PomK_topo.nc", "r")
+
+pom_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", pom_grid_file%lon)
+pom_1D_grid_lat = new_1D_grid("lat", "degrees", pom_grid_file%lat)
+pom_1D_grid_lev = new_1D_grid("lev", "m", pom_grid_file%dep)
+pom_1D_grid_lon%center%lon = read_field(pom_grid_file, "lon")
+pom_1D_grid_lat%center%lat = read_field(pom_grid_file, "lat")
+pom_h2D_grid = combine_grids(pom_1D_grid_lon, pom_1D_grid_lat)
+
+pom_topo_field = read_field(pom_h2D_grid, pom_grid_file, "topo")
+pom_h2D_grid%mask = extract_mask(pom_topo_field, "1.e+10f", "1.e+30f") 
+
+pom_3D_grid = combine_grids(pom_h2D_grid, pom_1D_grid_lev)
+
+bilinear_remap = new_operator("bilinear", masnum_h2D_grid, pom_h2D_grid)
+linear_remap = new_operator("linear", masnum_1D_grid_lev, pom_1D_grid_lev)
+remap_strategy_masnum_to_pom = combine_operators(bilinear_remap, linear_remap)
+wgts_file_masnum_to_pom = add_bin_file("./remap_weights_files/remap_weights_files_by_CoR/masnum2_pomfio2_3D_bilinear_linear_remap_wgts.bin", "r")
+masnum_to_pom_3D_wgts = read_remap_wgts(remap_strategy_masnum_to_pom, masnum_3D_grid, pom_3D_grid, wgts_file_masnum_to_pom, "C-Coupler")
+
+

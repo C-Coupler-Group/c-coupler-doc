@@ -1,0 +1,64 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Cheng Zhang on 2015/1/31. 
+#  If you have any problem, please contact:
+#  Dr. Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+# Note:
+# Paramters:
+#     1. Number of ensembles
+#	  2. The ensemble member list: num1,num2-num3,num4, where num2<=num3
+#
+# $CASEROOT is needed
+
+check_ensemble_member()
+{
+	ensemble_number="$1"
+	ensemble_member="$2"
+
+	IFS_BAK=$IFS
+	IFS=,
+	ensemble_list=($ensemble_member)
+	IFS=$IFS_BAK
+
+	declare -a ensemble_member_bitmap
+
+	for (( i = 0; i <= ensemble_number; i++ ))
+	do
+		ensemble_member_bitmap[i]=0
+	done
+
+	for (( i = 0; i < ${#ensemble_list[*]}; i++ ))
+	do
+		tmp_member="${ensemble_list[i]}"
+		if [[ "$tmp_member" =~ ^[0-9][0-9]*$ ]]; then
+			if (( ${tmp_member} > 0 && ${tmp_member} <= ${ensemble_number} )); then
+				ensemble_member_bitmap[tmp_member]=1
+			else
+				return 2
+			fi
+		elif [[ "$tmp_member" =~ ^[0-9][0-9]*-[0-9][0-9]*$ ]]; then
+			IFS_BAK=$IFS
+			IFS=-
+			ensemble_range=($tmp_member)
+			IFS=$IFS_BAK
+			if (( ${ensemble_range[0]} > 0 && ${ensemble_range[0]} <= ${ensemble_range[1]} && ${ensemble_range[1]} <= $ensemble_number )); then
+				
+				for (( j = ensemble_range[0]; j <= ensemble_range[1]; j++ ))
+				do
+					ensemble_member_bitmap[j]=1
+				done
+			else
+				return 2
+			fi
+		else
+			return 1
+		fi
+	done
+
+	echo ${ensemble_member_bitmap[*]}
+	return 0
+}

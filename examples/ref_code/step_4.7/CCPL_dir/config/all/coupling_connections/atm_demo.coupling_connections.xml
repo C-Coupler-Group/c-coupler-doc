@@ -1,0 +1,14 @@
+<?xml version="1.0" ?>
+<root>
+<local_import_interfaces>
+   <import_interface  name="receive_data_from_ocn"  status="on">
+       <import_connection status="on">
+           <fields status="on" default="all">
+           </fields>
+           <components status="on" default="off">
+              <component comp_full_name="ocn_demo2" interface_name="send_data_to_atm"/>
+           </components>
+       </import_connection>
+   </import_interface>
+</local_import_interfaces>
+</root>

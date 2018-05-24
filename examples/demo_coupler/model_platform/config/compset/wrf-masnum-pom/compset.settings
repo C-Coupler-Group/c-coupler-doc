@@ -1,0 +1,52 @@
+common
+{
+    model=masnum
+    model=pom
+    model=wrf
+    lib=esmf
+    lib=c_coupler
+    _case_desc=wind-wave-current coupled model with WRF, MASNUM and POM 
+    _run_type=initial
+    _run_start_date=2011-06-08
+    _run_start_second=43200
+    _run_stop_date=2011-06-11
+    _run_stop_second=43200
+    _rest_freq_unit=months
+    _rest_freq_count=1
+    _leap_year = false
+    _orbYear = 1990
+    _run_restart_date=1200-02-01
+    _run_restart_second=00000
+    _original_case_name=original_case
+    _original_config_time=130426-111111
+}
+pom
+{
+    realname=pom
+    grid=0.25
+    type=ocn
+    num_total_proc=4
+    num_x_proc=2
+    num_y_proc=2
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=120 
+}
+masnum
+{
+    realname=masnum
+    grid=0.25
+    type=wave
+    num_total_proc=4
+    num_x_proc=2
+    num_y_proc=2
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=300
+}
+wrf
+{
+    realname=WRFV3
+    type=atm
+    num_total_proc=2
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=80 
+}

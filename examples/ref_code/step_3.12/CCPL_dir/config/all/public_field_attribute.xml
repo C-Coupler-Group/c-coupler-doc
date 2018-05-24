@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<field name="psl"  dimensions="H2D"   long_name="Sea level pressure"  type="state"  default_unit="Pa" />
+<field name="prect"  dimensions="H2D"   long_name="precpitation"  type="state"  default_unit="m/s" />
+<field name="flds"  dimensions="H2D"   long_name="Long wave downward flux at surface"  type="state"  default_unit="W m-2" />
+<field name="fsds"  dimensions="H2D"   long_name="Short wave downward flux at surface"  type="state"  default_unit="W m-2" />
+<field name="sst"  dimensions="H2D"   long_name="Surface temperature"  type="state"  default_unit="K" />
+<field name="shf"  dimensions="H2D"   long_name="net surface heat flux"  type="state"  default_unit="W m-2" />
+<field name="ssh"  dimensions="H2D"   long_name="sea surface height"  type="state"  default_unit="m" />
+<field name="mld"  dimensions="H2D"   long_name="mixed layer depth"  type="state"  default_unit="m" />

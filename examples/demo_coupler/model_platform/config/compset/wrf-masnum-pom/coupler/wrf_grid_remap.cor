@@ -1,0 +1,11 @@
+
+
+wrf_grid_file = add_nc_file("grids/geo_em.d01.nc", "r")
+wrf_1D_grid_lon = new_1D_grid("lon", "degrees", "acyclic", wrf_grid_file%west_east)
+wrf_1D_grid_lat = new_1D_grid("lat", "degrees", wrf_grid_file%south_north)
+wrf_h2D_grid = combine_grids(wrf_1D_grid_lon, wrf_1D_grid_lat)
+wrf_h2D_grid%center%lon = read_field(wrf_grid_file, "XLONG_M") 
+wrf_h2D_grid%center%lat = read_field(wrf_grid_file, "XLAT_M")
+
+
+

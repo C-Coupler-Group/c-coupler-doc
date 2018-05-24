@@ -1,0 +1,8 @@
+<?xml version="1.0" ?>
+<Report_setting
+    report_internal_log="on"
+    report_external_log="on"
+    report_progress="on"
+    report_error="on"
+    flush_log_file="on"
+/>

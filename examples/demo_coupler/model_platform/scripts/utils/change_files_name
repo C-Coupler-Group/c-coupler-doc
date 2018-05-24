@@ -1,0 +1,12 @@
+#!/bin/bash
+
+case1=$1
+case2=$2
+filelists=$(ls)
+for name in $filelists
+do
+	Newname=${name//$case1/$case2}
+	if [ "$name" != "$Newname" ] ; then
+		mv $name $Newname
+	fi
+done

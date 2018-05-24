@@ -1,0 +1,15 @@
+# $Id: base.site,v 1.1.2.2 2003/12/02 22:35:53 erik Exp $ 
+
+#  This file contains site-specific information.  The definitions below
+#  should be changed to match the locations of libraries at your site.
+#  The following naming convention is used:
+#     XXX_LIB - location of library XXX
+#     XXX_INCLUDE - directory for include files needed for library XXX
+#
+# Location of MPI (Message Passing Interface) software  
+#
+ESMC_MPIRUN = mpirun 
+MPI_LIB =
+#MPI_INCLUDE     = -DESMC_HAVE_INT_MPI_COMM
+MPI_INCLUDE =
+MPIRUN = ${ESMC_MPIRUN}

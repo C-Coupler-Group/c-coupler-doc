@@ -1,0 +1,60 @@
+# $Id: base_variables,v 1.1.2.1 2004/05/11 20:01:57 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+AR		   = ar
+AR_FLAGS	   = cr
+RM		   = rm -f
+OMAKE		   = ${MAKE}
+RANLIB		   = ranlib
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+SH_LD		   = icc
+# ######################### C and Fortran compiler ########################
+#
+C_CC		   = icc
+C_FC		   = ifort
+C_FC_MOD           = -I
+C_CLINKER_SLFLAG   = -Wl,-rpath,
+C_FLINKER_SLFLAG   = -Wl,-rpath,
+C_CLINKER	   = icc
+C_FLINKER	   = ifort
+C_CCV		   = ${C_CC} --version
+C_FCV              = ifort
+C_SYS_LIB	   = -ldl -lc -lg2c -lm
+#C_SYS_LIB	   = -ldl -lc -lf2c -lm
+#C_SYS_LIB	   = -ldl -lc /usr/lib/libf2c.a -lm  #Use /usr/lib/libf2c.a if that's what your f77 uses.
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = -g 
+G_FOPTFLAGS	   = -g
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = -w -O2 -ftz -tpp2 -fno-alias -fno-fnalias -ip -g
+O_FOPTFLAGS	   = -w -cm -cpp -r8 -WB -O2 -ftz -tpp2 -Zp16 -fno-alias -fno-fnalias -stack_temps -ip -assume byterecl -convert big_endian -g
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = icc
+CXX_FC		   = ifort
+CXX_CLINKER_SLFLAG = -Wl,-rpath,
+CXX_FLINKER_SLFLAG = -Wl,-rpath,
+CXX_CLINKER	   = icc
+CXX_FLINKER	   = icc
+CXX_CCV		   = ${CXX_CC} --version
+#CXX_SYS_LIB	   = -ldl -lc -lf2c -lm
+CXX_SYS_LIB	   = -ldl -lc -lg2c -lm
+#CXX_SYS_LIB	   = -ldl -lc /usr/lib/libf2c.a -lm
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = -g 
+GCXX_FOPTFLAGS	   = -g
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   = -w -O2 -ftz -tpp2 -fno-alias -fno-fnalias -ip -g
+OCXX_FOPTFLAGS	   = -w -cm -cpp -r8 -WB -O2 -ftz -tpp2 -Zp16 -fno-alias -fno-fnalias -stack_temps -ip -assume byterecl -convert big_endian -g
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = -g
+GCOMP_FOPTFLAGS	   = -g
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   = -w -O2 -ftz -tpp2 -fno-alias -fno-fnalias -ip -g
+OCOMP_FOPTFLAGS	   = -w -cm -cpp -r8 -WB -O2 -ftz -tpp2 -Zp16 -fno-alias -fno-fnalias -stack_temps -ip -assume byterecl -convert big_endian -g
+
+PARCH		   = linux_altix
+
+include ${ESMF_DIR}/build/common_variables

@@ -1,0 +1,40 @@
+common
+{
+    model=gamil
+    model=colm
+    lib=esmf
+    lib=c_coupler
+    _case_desc=GAMIL sole run with land surface model CoLM. Two models a coupled with C-Coupler
+    _run_type=initial
+    _run_start_date=1976-01-01
+    _run_start_second=00000
+    _run_stop_date=2010-01-01
+    _run_stop_second=00000
+    _rest_freq_unit=months
+    _rest_freq_count=1
+    _leap_year = false
+    _orbYear = 1990
+    _run_restart_date=1200-02-01
+    _run_restart_second=00000
+    _original_case_name=original_case
+    _original_config_time=130426-111111
+}
+gamil
+{
+    realname=GAMIL2.0_128x60
+    grid=128x60
+    type=atm
+    num_total_proc=2
+    num_x_proc=1
+    num_y_proc=2
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=1200 
+}
+colm
+{
+    realname=CoLM
+    grid=128x60
+    type=lnd
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=1200 
+}

@@ -1,0 +1,68 @@
+common
+{
+    model=c_coupler
+    model=gamil
+    model=licom
+    model=cice
+    model=colm
+    lib=esmf
+    lib=c_coupler
+    _case_desc=Default experiment template of FGOALS-gc-colm, which is a coupled model version based on FGOALS-gc and land surface model CoLM4
+    _run_type=initial
+    _run_start_date=1200-01-01
+    _run_start_second=00000
+    _run_stop_date=1200-01-03
+    _run_stop_second=00000
+    _rest_freq_unit=months
+    _rest_freq_count=1
+    _leap_year = true
+    _orbYear = 1990
+    _run_restart_date=1200-02-01
+    _run_restart_second=00000
+    _original_case_name=original_case
+    _original_config_time=130426-111111
+}
+c_coupler
+{
+    realname=c_coupler
+    grid=128x60
+    type=cpl
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=3600 
+}
+gamil
+{
+    realname=GAMIL2.0_128x60
+    grid=128x60
+    type=atm
+    num_total_proc=2
+    num_x_proc=1
+    num_y_proc=2
+    _stop_latency_seconds=4800
+    _cpl_interface_time_step=1200 
+}
+licom
+{
+    realname=LICOM2.0
+    grid=eq1x1
+    type=ocn
+    num_total_proc=2
+    _stop_latency_seconds=0
+    _cpl_interface_time_step=86400 
+}
+cice
+{
+    realname=CICE_LASG_v1.0
+    grid=eq1x1
+    type=sice
+    _stop_latency_seconds=3600
+    _cpl_interface_time_step=3600 
+}
+colm
+{
+    realname=colm4_beta
+    grid=128x60
+    type=lnd
+    _stop_latency_seconds=3600
+    _cpl_interface_time_step=1800 
+}

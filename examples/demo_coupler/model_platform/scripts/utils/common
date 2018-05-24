@@ -1,0 +1,47 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+mymkdir()
+{
+    echo -n "  Creating directory $1 ... "
+    mkdir -p "$1"
+    echo "done"
+    return 0
+}
+
+mycopy()
+{
+    echo -n "  Copying $3 ... "
+    if [ ! -e "$1" ]; then
+        report_logs "ERROR" "File \"$1\" does not exists, abort. Please verify."
+        return 1
+    fi
+    cp -f "$1" "$2"
+    echo "done"
+    return 0
+}
+
+mycopydir()
+{
+    echo -n "  Copying $3 ... "
+    if [ ! -e "$1" ]; then
+        report_logs "ERROR" "Directory \"$1\" does not exists, abort. Please verify."
+        return 1
+    fi
+    mkdir -p "$2"
+    cp -rf "$1"/* "$2"
+    echo "done"
+    return 0
+}
+
+trim()
+{
+    echo "$1" | grep -o "[^ ]\+\( \+[^ ]\+\)*"
+}
+

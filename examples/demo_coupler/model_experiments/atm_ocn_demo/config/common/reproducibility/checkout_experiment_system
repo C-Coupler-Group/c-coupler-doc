@@ -1,0 +1,1002 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/12/03. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+# == Get the path of this script ==
+MYPATH=$(readlink -f "$0")
+MYPATH=$(dirname "$MYPATH")
+# =================================
+export LC_ALL="POSIX"
+SVN_DATA_RELATIVE_PATH="uniform_model_platform/inputdata"
+
+TEMP=$(getopt -a -o h -l bypass_platform,bypass_inputdata -n checkout_experiment -- "$@")
+
+if [ $? -ne 0 ]; then
+    echo "usage: checkout_experiment [-bypass_platform] [-bypass_inputdata] <config archive> <local config>"
+    exit 1
+fi
+
+eval set -- $TEMP
+
+BYPASS_PLATFORM="no"
+BYPASS_INPUTDATA="no"
+while true; do
+    case "$1" in
+        --) shift; break ;;
+        --bypass_platform) shift;  BYPASS_PLATFORM="yes" ;;
+        --bypass_inputdata) shift; BYPASS_INPUTDATA="yes" ;;
+        *) echo; echo "[ERROR]: An internal error of the C-Coupler platform is detected. Please contact the C-Coupler team."; echo; exit 1 ;;
+    esac
+done
+
+if [ ! -f "$1" ]; then
+    echo 
+    echo "[ERROR]: Simulation setting package \"$1\" does not exists. Please check."
+    echo 
+    exit 1
+fi
+
+if [ ! -f "$2" ]; then
+    echo 
+    echo "[ERROR]: Environmental variable file \"$2\" does not exists. Please check."
+    echo 
+    exit 1
+fi
+
+URL_PROTOCOL=""
+URL_USER=""
+URL_PASSWORD=""
+URL_REV=""
+URL_HOSTNAME=""
+URL_PORT=""
+URL_PATH=""
+URL_NOUSER_URL=""
+ASK_USERPASS_TIMEOUT="120"
+
+source "$2"
+
+if [ -d /dev/shm -a -w /dev/shm ]; then
+    HASH__DIRECTORY="/dev/shm"
+elif [ -d /tmp -a -w /tmp ]; then
+    HASH__DIRECTORY="/tmp"
+elif [ -d "$MYPATH" -a -w "$MYPATH" ]; then
+    HASH__DIRECTORY="$MYPATH"
+else
+    echo "[ERROR]: No writable directories for hashtable. Please contact the C-Coupler team!"
+    exit 1
+fi
+
+hash_init() {
+    rm -rf $HASH__DIRECTORY/$$.hashmap
+    mkdir -p $HASH__DIRECTORY/$$.hashmap
+}
+
+hash_put() {
+    mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+    printf "$3" > $HASH__DIRECTORY/$$.hashmap/$1/$2
+}
+
+hash_exists() {
+    mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+    if [ -f $HASH__DIRECTORY/$$.hashmap/$1/$2 ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+hash_get() {
+    mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+    if hash_exists $1 $2; then
+        cat $HASH__DIRECTORY/$$.hashmap/$1/$2
+    fi
+}
+
+hash_destroy() {
+    rm -rf $HASH__DIRECTORY/$$.hashmap
+}
+
+set_user_pass()
+{
+    local username=""
+    local password=""
+    if [ $# -eq 2 ]; then
+        username="$2"
+        echo "Please enter the password of user '$username' in $1."
+    else
+        echo "Please enter the username & password in $1. If username & password are needless. Leave it blank."
+        read -t $ASK_USERPASS_TIMEOUT -p "Username: " username
+    fi
+    if [ ! -z "$username" ]; then
+        read -t $ASK_USERPASS_TIMEOUT -s -p "Password: " password
+    else
+        username="/"
+    fi
+    hash_put checkout_experiment_download_user "$1" "$username"
+    hash_put checkout_experiment_download_pass "$1" "$password"
+    USER="$username"
+    PASSWORD="$password"
+}
+
+download_wget() {
+    if [ ! -z "$USER" ]; then
+        wget -c "$1" --user="$USER" --password="$PASSWORD" -O "$2.downloading"
+    else
+        wget -c "$1" -O "$2.downloading"
+    fi
+    case $? in
+        0)
+        return 0
+        ;;
+        6)
+        return 1
+        ;;
+        *)
+        return 2
+        ;;
+    esac
+}
+
+download_lftp() {
+    if [ ! -z "$USER" ]; then
+        url=$(echo $1|sed "s#://#://$USER:$PASSWORD@#g")
+        lftp -c get1 "$url" -o "$2.downloading"
+    else
+        lftp -c get1 "$1" -o "$2.downloading"
+    fi
+    case $? in
+        0)
+        return 0
+        ;;
+        1)
+        return 1
+        ;;
+        *)
+        return 2
+        ;;
+    esac
+}
+
+download_curl() {
+    if [ ! -z "$USER" ]; then
+        curl -f -u "$USER:$PASSWORD" -C - "$1" -o "$2.downloading"
+    else
+        curl -f -C - "$1" -o "$2.downloading"
+    fi
+    case $? in
+        0)
+        return 0
+        ;;
+        22)
+        return 1
+        ;;
+        *)
+        return 2
+        ;;
+    esac
+}
+
+do_download_network() {
+    local dest="$1"
+    local required_md5sum="$2"
+    local filename="$3"
+    local host=""
+    local host_hash_key=""
+    local ok="0"
+    if [ "$URL_PORT" = "-" ]; then
+        host="${URL_HOSTNAME}"
+        host_hash_key="${URL_PROTOCOL}_${URL_HOSTNAME}"
+    else
+        host="${URL_HOSTNAME}:${URL_PORT}"
+        host_hash_key="${URL_PROTOCOL}_${URL_HOSTNAME}_${URL_PORT}"
+    fi
+
+    if [ ! -z $(hash_get "checkout_experiment_download_disable" "$host_hash_key") ]; then
+        return 2
+    fi
+    if [ -z $(hash_get "checkout_experiment_download_user" "$host_hash_key") ];
+    then
+        # Username & password for this host are not saved
+        if [ ! -z "$URL_USER" ]; then
+            # Username & password are provided in URL
+            if [ -z "$URL_PASSWORD" ]; then
+                # password is not provided, ask user
+                set_user_pass "$host_hash_key" "$URL_USER"
+            else
+                USER="$URL_USER"
+                PASSWORD="$URL_PASSWORD"
+                hash_put checkout_experiment_download_user "$host_hash_key" "$URL_USER"
+                hash_put checkout_experiment_download_pass "$host_hash_key" "$URL_PASSWORD"
+            fi
+        else
+            # Username & password are not provided in URL, ask user
+            USER="guest"
+            PASSWORD="guest"
+            hash_put checkout_experiment_download_user "$host_hash_key" "$USER"
+            hash_put checkout_experiment_download_pass "$host_hash_key" "$PASSWORD"
+        fi
+    else
+        # Username & password for this host are saved
+        USER="$(hash_get checkout_experiment_download_user $host_hash_key)"
+        if [ "$USER" = "/" ]; then
+            USER=""
+        else
+            PASSWORD="$(hash_get checkout_experiment_download_pass $host_hash_key)"
+        fi
+    fi
+    local url="";
+    if [ "$URL_REV" = "-" ]; then
+        url="${URL_PROTOCOL}://${host}/$URL_PATH/$filename"
+    else
+        url="${URL_PROTOCOL}://${host}/$URL_PATH/!svn/bc/$URL_REV/$filename"
+    fi
+
+    password_retry_left=5
+    while [ $password_retry_left -gt 0 ]
+    do
+        download_${DOWNLOAD_CMD} "$url" "$dest"
+        case $? in
+            0)
+            mv "$dest.downloading" "$dest"
+            if [ ! -z "$required_md5sum" ]; then
+                local_md5=$($CHECKSUM_CMD "$dest")
+                if [ "$required_md5sum" != "$local_md5" ]; then
+                    echo "***WARNING*** For the input data file $dest, its MD5 checksum recorded in the simulation setting package \"$1\" does not match the MD5 checksum of the file copy downloaded from \"$url\". Next URL will be tried if it exists." 
+                    rm -rf "$dest"
+                    break
+                fi
+            fi
+            ok="1"
+            break
+            ;;
+            1)
+            if [ $password_retry_left -gt 1 ]; then
+                set_user_pass "$host_hash_key"
+            fi
+            ;;
+            *)
+            rm -rf "$dest.downloading"
+            return 1
+            ;;
+        esac
+        let password_retry_left=password_retry_left-1
+    done
+    rm -rf "$dest.downloading"
+    if [ "$ok" = "1" ]; then
+        return 0
+    fi
+    if [ "$ok" = "0" ]; then
+        hash_put checkout_experiment_download_disable "$host_hash_key" "1"
+        return 2
+    fi
+}
+
+parse_url()
+{
+    URL_PROTOCOL=$(echo $1|sed 's/\(.*\):\/\/.*/\1/g')
+    local tmp_url=$(echo $1|sed 's/.*:\/\/\(.*\)/\1/g')
+    if [ $(expr index "$tmp_url" '*') -eq 0 ]; then
+        URL_REV="-"
+    else
+        URL_REV="${tmp_url##*\*}"
+        tmp_url="${tmp_url%%\**}"
+    fi
+    if [ $(expr index "$tmp_url" '@') -eq 0 ]; then
+        URL_NOUSER_URL="$tmp_url"
+        URL_USER=""
+        URL_PASSWORD=""
+    else
+        local tmp_user_pass=$(echo $tmp_url|sed 's/\(.*\)@.*/\1/g')
+        if [ $(expr index "$tmp_user_pass" ":") -eq 0 ]; then
+            #no password
+            URL_USER="$tmp_user_pass"
+            URL_PASSWORD=""
+        else
+            URL_USER=${tmp_user_pass%%:*}
+            URL_PASSWORD=${tmp_user_pass##*:}
+        fi
+        URL_NOUSER_URL=${tmp_url#*@}
+    fi
+    local tmp_host_port=""
+    if [ $URL_PROTOCOL = "scp" ]; then
+        #scp path start with ":"
+        URL_PATH=${URL_NOUSER_URL##*:}
+        tmp_host_port=${URL_NOUSER_URL%:*}
+    else
+        #other path start with "/"
+        URL_PATH=${URL_NOUSER_URL#*/}
+        tmp_host_port=${URL_NOUSER_URL%%/*}
+    fi
+    if [ $(expr index "$tmp_host_port" ':') -eq 0 ]; then
+        #no port information
+        URL_PORT="-"
+        URL_HOSTNAME="$tmp_host_port"
+    else
+        URL_PORT=${tmp_host_port##*:}
+        URL_HOSTNAME=${tmp_host_port%:*}
+    fi
+}
+
+do_download_copy()
+{
+    local src="$1"
+    local dest="$2"
+    local md5="$3"
+    if [ ! -f "$src" ]; then
+        return 1
+    fi
+    if [ ! -z "$md5" ]; then
+        local src_md5=$($CHECKSUM_CMD "$src")
+        if [ "$src_md5" != "$md5" ]; then
+            return 1
+        fi
+    fi
+    cp -f "$src" "$dest"
+}
+
+do_download()
+{
+    local filename="$1"
+    local url="$2"
+    local dest="$3"
+    local checksum="$4"
+    while true; do
+        if [[ "$url" != *"://"* ]]; then
+            do_download_copy "$url/$filename" "$dest" "$checksum"
+            if [ $? -eq 0 ]; then
+                return 0
+            fi
+        else
+            parse_url "$url"
+            if [ $URL_PROTOCOL = "scp" ]; then
+                #scp
+                #TODO
+                echo -n
+            else
+                do_download_network "$dest" "$checksum" "$filename" 
+                case $? in
+                    0)
+                    return 0
+                    ;;
+                    2)
+                    break
+                    ;;
+                    *)
+                    ;;
+                esac
+            fi
+        fi
+        if [ $(expr index "$filename" "/") -eq 0 ]; then
+            break
+        else
+            filename="${filename#*/}"
+        fi
+    done
+    return 1
+}
+
+checksum_md5sum() {
+    md5sum "$1"|awk '{print $1}'
+}
+
+checksum_md5() {
+    md5 "$1"|awk '{print $NF}'
+}
+
+# Check checksum tools
+if which md5 > /dev/null 2>&1; then
+    CHECKSUM_CMD="checksum_md5"
+elif which md5sum > /dev/null 2>&1; then
+    CHECKSUM_CMD="checksum_md5sum"
+else
+    echo "Md5 or md5sum are needed to verify data. But neither of them is found."
+    exit 1
+fi
+
+# Check downloading tools
+if which wget > /dev/null 2>&1; then
+    DOWNLOAD_CMD="wget"
+elif which lftp > /dev/null 2>&1; then
+    DOWNLOAD_CMD="lftp"
+elif which curl > /dev/null 2>&1; then
+    DOWNLOAD_CMD="curl"
+else
+    echo "Lftp or wget are needed to download data. But neither of them is found."
+    exit 1
+fi
+
+
+rm -f checkout_experiment.log
+
+if [ "$BYPASS_PLATFORM" = "no" ]; then
+if [ -z "$PLATFORMROOT" ]; then
+    echo "Please set PLATFORMROOT in $2."
+    exit 1
+fi
+fi
+
+PLATFORMROOT=$(echo $PLATFORMROOT|sed 's#/*$##g')
+
+if [ "$BYPASS_INPUTDATA" = "no" ]; then
+if [ -z "$DATAROOT" ]; then
+    echo "Please set DATAROOT in $2."
+    exit 1
+fi
+fi
+
+if [ ! -e "$DATAROOT" ]; then
+    mkdir -p "$DATAROOT"
+elif [ ! -d "$DATAROOT" ]; then
+    echo "$DATAROOT exists but not a directory, abort."
+    exit 1
+fi
+
+configuration_time=$(date +%Y%m%d-%H%M%S)
+
+TMPDIR=$(mktemp -d)
+
+tar xf "$1" -C "$TMPDIR"
+if [ $? -ne 0 ]; then
+    echo \"$1\" is not a simulation setting package. Please check
+    exit 1
+fi
+
+if [ ! -f "$TMPDIR/config/common/reproducibility/repository_version_info" ]; then
+    echo "repository_version_info does not exist, abort."
+    rm -rf "$TMPDIR"
+    exit 1
+fi
+
+retar="false"
+if [ "$BYPASS_PLATFORM" = "no" ]; then
+
+    # Download platform codes
+    mkdir -p "$PLATFORMROOT"
+    if [ ! -d "$PLATFORMROOT" ]; then
+        echo "$PLATFORMROOT exists but not a directory, abort."
+        exit 1
+    fi
+
+    exec 3<> "$TMPDIR/config/common/reproducibility/repository_version_info"
+    while read path gitrev <& 3
+    do
+        modelpath="$PLATFORMROOT/$path"
+        if [ -e "$modelpath" -a ! -d "$modelpath" ]; then
+            echo "$modelpath exists but is not a directory, abort."
+            exit 1
+        elif [ -d "$modelpath" ]; then
+            pushd "$modelpath" > /dev/null 2>&1
+            incorrect_git=""
+            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                echo "$modelpath exists, but it seems that it is not our platform directory." 
+                incorrect_git="1"
+            else
+                incorrect_git="1"
+                localgiturl=$(git remote -v|grep "^\<origin\>.*(fetch)"|sed "s/origin[ \t]*\([^ \t]*\)[ \t]*(fetch)$/\1/g")
+                while read log_date log_path log_gitrev log_giturl 
+                do
+                    if [ "${log_path}" = "$path" -a "${log_gitrev}" = "$gitrev" -a "${log_giturl}" = "$localgiturl" ]; then
+                        incorrect_git=""
+                        break
+                    fi
+                done < "$TMPDIR/config/common/reproducibility/repository_version_log"
+
+                if [ ! -z "$incorrect_git" ]; then
+                    echo "The remote origin of $modelpath is different with this experiment."
+                fi
+            fi
+
+            if [ ! -z "$incorrect_git" ]; then
+                echo "  (1) Abort. You can check it and checkout this experiment again."
+                echo "  (2) Backup the directory into $modelpath.bak and continue."
+                echo "  (3) Skip this module and continue."
+                while true; do
+                    read -p "Please select a choice: " choice
+                    case "$choice" in
+                        1)
+                        exit 1
+                        ;;
+                        2)
+                        popd > /dev/null 2>&1
+                        if [ -e "$modelpath.bak" ]; then
+                            echo "Directory $modelpath.bak exists, abort."
+                            exit 1
+                        fi
+                        mv "$modelpath" "$modelpath.bak"
+                        pushd "$HOME" > /dev/null 2>&1
+                        break
+                        ;;
+                        3)
+                        touch $modelpath/.no-patch
+                        break
+                        ;;
+                        *)
+                        ;;
+                    esac
+                done < /dev/stdin
+                popd > /dev/null 2>&1
+            else
+                rm -rf $modelpath/.no-patch > /dev/null 2>&1
+                git_dirty=$(git diff --no-ext-diff --quiet --exit-code > /dev/null 2>&1 || echo "1")
+                git_staged=$(git diff --cached --no-ext-diff --quiet --exit-code > /dev/null 2>&1 || echo "1")
+                git_newfile=$([ ! -z "$(git ls-files --others --exclude-standard)" ] && echo "1")
+                not_checkout=""
+                if [ ! -z "$git_dirty$git_staged$git_newfile" ]; then
+                    echo "$PLATFORMROOT/models/$path is dirty or staged."
+                    echo "  (1) Abort. You can commit it and checkout this experiment again."
+                    echo "  (2) Abandon the dirty or staged code and continue."
+                    echo "  (3) Skip this module and continue."
+                    while true; do
+                        read -p "Please select a choice: " -e choice
+                        case "$choice" in
+                            1)
+                            exit 1;
+                            ;;
+                            2)
+                            git checkout --force
+                            git ls-files --others --exclude-standard | while read -r i; do rm -rf "$modelpath/$i" ; done
+                            break;
+                            ;;
+                            3)
+                            not_checkout="1"
+                            touch $modelpath/.no-patch
+                            break;
+                            ;;
+                            *)
+                            ;;
+                        esac
+                    done < /dev/stdin
+                fi
+                if [ -z "$not_checkout" ]; then
+                    git fetch origin
+                    git checkout --force $gitrev
+                fi
+            fi
+            popd > /dev/null 2>&1
+        fi
+
+        if [ ! -e "$modelpath" ]; then
+            uniq_log=$(mktemp)
+            incorrect_git="1"
+            if [ -f "$TMPDIR/config/common/coderoot_log" ]; then
+                while read local_path
+                do
+                    grep -F -x "$local_path" $uniq_log > /dev/null
+                    if [ "$?" != "0" ]; then
+                        echo "$local_path" >> $uniq_log
+                    else
+                        continue
+                    fi
+
+                    TMPGIT=$(mktemp -d)
+                    git clone "$local_path/$path" "$TMPGIT"
+                    if [ "$?" = "0" ]; then
+                        pushd "$TMPGIT" > /dev/null 2>&1
+                        git checkout $gitrev
+                        if [ "$?" = "0" ]; then
+                            incorrect_git=""
+                            popd > /dev/null 2>&1
+                            echo "$local_path/$path"
+                            pushd "$local_path/$path" > /dev/null 2>&1
+                            originrev=$(git show origin/master | grep "^commit"| sed "s#commit ##")
+                            originurl=$(git remote -v|grep "^\<origin\>.*(fetch)"|sed "s/origin[ \t]*\(.*\)[ \t]*(fetch)$/\1/g")
+                            popd > /dev/null 2>&1
+
+                            git reset --hard "$originrev"
+                            git clone "$TMPGIT" "$modelpath"
+                            pushd "$modelpath" > /dev/null 2>&1
+                            git checkout $gitrev
+                            git remote set-url origin "$originurl"
+                            popd > /dev/null 2>&1
+                            pushd "$TMPGIT" > /dev/null 2>&1
+                        fi
+                        popd > /dev/null 2>&1
+                    fi
+                    rm -rf $TMPGIT
+                    if  [ -z "$incorrect_git" ]; then
+                        break
+                    fi
+                done < "$TMPDIR/config/common/coderoot_log"
+            fi
+
+
+            if [ ! -z "$incorrect_git" ]; then
+                while read log_date log_path log_gitrev log_giturl 
+                do
+                    if [ "${log_path}" = "$path" -a "${log_gitrev}" = "$gitrev" ]; then
+                        grep -F -x "$log_giturl" $uniq_log > /dev/null
+                        if [ "$?" != "0" ]; then
+                            echo "$log_giturl" >> $uniq_log
+                        else
+                            continue
+                        fi
+
+                        for ((i=4; i>0; i--))
+                        do
+                            output_log=$(mktemp)
+                            git clone "$log_giturl" "$modelpath" > $output_log 2>&1
+                            result="$?"
+
+                            grep "Authentication failed" $output_log
+                            if [ "$?" != "0" ]; then
+                                rm $output_log
+                                break
+                            fi
+
+                            rm $output_log
+
+                            if [ "$i" -gt "1" ]; then
+                                echo -e "\n\nThe username or password is wrong! Please try again!\n\n"
+                            else
+                                echo -e "\n\nYou have tried 4 times. We will try clone from other repositories\n\n"
+                            fi
+                        done
+                        if [ "$result" = "0" ]; then
+                            pushd "$modelpath" > /dev/null 2>&1
+                            git checkout $gitrev
+                            popd > /dev/null 2>&1
+                            incorrect_git=""
+                            break
+                        fi
+                    fi
+                done < "$TMPDIR/config/common/reproducibility/repository_version_log"
+            fi
+
+            while [ ! -z "$incorrect_git" ]
+            do
+                rm -rf $modelpath 
+                echo " Cannot connect to the git repository of $modelpath."
+                echo " (1) Abort."
+                echo " (2) Clone the git repository from local."
+                echo " (3) Clone the git repository from network."
+                while true; do
+                    read -p " Please select a choice: " choice
+                    case "$choice" in
+                        1)
+                        exit 1
+                        ;;
+                        2)
+                        read -p " Please input the path: " -e local_path
+                        local_path=$(eval echo "$local_path")
+
+                        grep -F -x "$local_path" $uniq_log > /dev/null
+                        if [ "$?" != "0" ]; then
+                            echo "$local_path" >> $uniq_log
+                            TMPGIT=$(mktemp -d)
+                            git clone "$local_path/$path" "$TMPGIT" 
+                            if [ "$?" = "0" ]; then
+                                pushd "$TMPGIT" > /dev/null 2>&1
+                                git checkout $gitrev 
+                                if [ "$?" = "0" ]; then
+                                    popd > /dev/null 2>&1
+                                    incorrect_git=""
+                                    pushd "$local_path/$path" > /dev/null 2>&1
+                                    originrev=$(git show origin/master | grep "^commit"| sed "s#commit ##")
+                                    originurl=$(git remote -v|grep "^\<origin\>.*(fetch)"|sed "s/origin[ \t]*\(.*\)[ \t]*(fetch)$/\1/g")
+                                    popd > /dev/null 2>&1
+
+                                    git reset --hard "$originrev"
+                                    git clone "$TMPGIT" "$modelpath" 
+                                    pushd "$modelpath" > /dev/null 2>&1
+                                    git checkout $gitrev 
+                                    git remote set-url origin "$originurl"
+                                    popd > /dev/null 2>&1
+                                    pushd "$TMPGIT" > /dev/null 2>&1
+
+                                    echo "$local_path" >> "$TMPDIR/config/common/coderoot_log"
+                                    retar="true"
+                                fi
+                                popd > /dev/null 2>&1
+                            fi
+                            rm -rf $TMPGIT
+                        else
+                            echo "The local repository has been tried and failed."
+                        fi
+
+                        break
+                        ;;
+                        3)
+                        read -p " Please input the url: " -e local_giturl
+                        grep -F -x "$local_giturl" $uniq_log > /dev/null
+                        if [ "$?" != "0" ]; then
+                            echo "$local_giturl" >> $uniq_log
+                            for ((i=4; i>0; i--))
+                            do
+                                output_log=$(mktemp)
+                                git clone "$local_giturl" "$modelpath" > $output_log 2>&1
+                                result="$?"
+
+                                grep "Authentication failed" $output_log
+                                if [ "$?" != "0" ]; then
+                                    rm $output_log
+                                    break
+                                fi
+
+                                rm $output_log
+
+                                if [ "$i" -gt "1" ]; then
+                                    echo -e "\n\nThe username or password is wrong! Please try again!\n\n"
+                                else
+                                    echo -e "\n\nYou have tried 4 times. We will try clone from other repositories\n\n"
+                                fi
+                            done
+                            if [ "$result" = "0" ]; then
+                                pushd "$modelpath" > /dev/null 2>&1
+                                git checkout $gitrev 
+                                if [ "$?" = "0" ]; then
+                                    incorrect_git=""
+                                fi
+                                popd > /dev/null 2>&1
+                                echo "$configuration_time" "$path" "$gitrev" "$local_giturl" >> $TMPDIR/config/common/reproducibility/repository_version_log
+                                retar="true"
+                            fi
+                        else
+                            echo -e "\nThe GIT repository has been tried and failed.\n\n"
+                        fi
+
+                        break
+                        ;;
+                        *)
+                        ;;
+                    esac
+                done
+            done
+            rm $uniq_log
+        fi
+    done
+    exec 3>&-
+
+
+    CASEROOT="$TMPDIR"
+    CODEROOT="$PLATFORMROOT/models"
+
+    types=`ls "$TMPDIR/patches/models"`
+
+    for model_type in $types
+    do
+        models=`ls "${CASEROOT}/patches/models/${model_type}"`
+        for model_name in $models
+        do
+            echo "Recover the source code of $model_type $model_name"
+            path="$CODEROOT/${model_type}/${model_name}"
+
+            if [ ! -d "$path" ]; then
+                mkdir -p "$path"
+            else
+                pushd "$path" > /dev/null 2>&1
+                if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                    popd > /dev/null 2>&1
+                    echo "$path"
+                    rm -rf "$path"
+                    mkdir -p "$path"
+                else
+                    popd > /dev/null 2>&1
+                fi
+            fi
+
+            pushd "$path" > /dev/null 2>&1
+            if [ ! -e "$path/.no-patch" ]; then
+				if [ -e "${CASEROOT}/patches/models/${model_type}/${model_name}/patches.txt" ]; then
+                    patch -p1 < "${CASEROOT}/patches/models/${model_type}/${model_name}/patches.txt"
+			    fi
+                tar xvf "${CASEROOT}/patches/models/${model_type}/${model_name}/patches.tar" > /dev/null
+            fi
+            popd > /dev/null 2>&1
+        done
+    done
+
+    for path in scripts config
+    do
+        echo "Recover the source code of the $path of the C-Coupler platform"
+        if [ ! -d "$PLATFORMROOT/$path" ]; then
+            mkdir -p "$PLATFORMROOT/$path"
+        else
+            pushd "$PLATFORMROOT/$path" > /dev/null 2>&1
+            if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                popd > /dev/null 2>&1
+                rm -rf "$PLATFORMROOT/$path"
+                mkdir -p "$PLATFORMROOT/$path"
+            else
+                popd > /dev/null 2>&1
+            fi
+        fi
+
+        pushd "$PLATFORMROOT/$path" > /dev/null 2>&1
+        if [ ! -e "$PLATFORMROOT/$path/.no-patch" ]; then
+			if [ -e "${CASEROOT}/patches/$path/patches.txt" ]; then
+			    patch -p1 < "${CASEROOT}/patches/$path/patches.txt"
+		    fi
+            tar xvf "${CASEROOT}/patches/$path/patches.tar" > /dev/null
+        fi
+        popd > /dev/null 2>&1
+    done
+fi
+
+
+# Download data
+
+if [ "$BYPASS_INPUTDATA" = "no" ]; then
+    INPUT_DATA_INDEX="$TMPDIR/config/common/reproducibility/input_data_index"
+    INPUT_DATA_LOG="$TMPDIR/config/common/reproducibility/input_data_log"
+
+    if [ -f "$INPUT_DATA_INDEX" ]; then
+        download_script=1
+        exec 3<> "$INPUT_DATA_INDEX"
+        hash_init
+        while read filename md5sum <& 3
+        do
+            # Download file(s)
+
+            dstfile="$DATAROOT/$filename"
+            if [ "$REQUIRE_CHECKSUM" = "no" ]; then
+                echo "***WARNING*** The checksum of the input data file $filename in simulation setting package $1 will be ignored. We will download this data file but cannot ensure the accuracy of the input data files. Please contact the provider of this simulation setting package if any problem." >> checkout_experiment.log
+                md5sum=""
+            else
+                if [ -z "$md5sum" ]; then
+                    echo "***WARNING*** Experiment setup package $1 does not have check sum of the input data file $filename. We can not download and compare this data file. Please contact the provider of this simulation setting package." >> checkout_experiment.log
+                    continue
+                fi
+            fi
+
+            unset download_list
+            declare -a download_list
+            download_list_count=0
+
+            if [ -f "$EXTRA_DATASRC_HIGH_PRIORITY" ]; then
+                exec 4<> "$EXTRA_DATASRC_HIGH_PRIORITY"
+                while read url <& 4; do
+                    download_list[$download_list_count]="$url"
+                    let download_list_count=download_list_count+1
+                done
+                exec 4>&-
+            fi
+            if [ "$download_script" = 1 ]; then
+                shell_download_list=( "${download_list[@]}" )
+                shell_download_list_count=$download_list_count
+                urllistfile="$(mktemp)"
+                exec 4<> "$INPUT_DATA_LOG"
+                while read log_date log_filename log_checksum log_svnrev log_svnpath <& 4; do
+                    if [ "$log_svnpath" = "-" ]; then
+                        continue
+                    fi
+                    url="$log_svnpath/$SVN_DATA_RELATIVE_PATH"
+                    if [ -z $(cat $urllistfile|grep -F -x "$url") ]; then
+                        echo "$url" >> $urllistfile
+                        shell_download_list[$shell_download_list_count]="$url"
+                        let shell_download_list_count=shell_download_list_count+1
+                    fi
+                done
+                exec 4>&-
+                unlink "$urllistfile"
+            fi
+
+            urllistfile="$(mktemp)"
+            exec 4<> "$INPUT_DATA_LOG"
+            while read log_date log_filename log_checksum log_svnrev log_svnpath <& 4; do
+                if [ "$log_svnrev" = "-" ]; then
+                    continue
+                fi
+                if [ "$log_filename" = "$filename" -a \( -z "$md5sum" -o "$log_checksum" = "$md5sum" \) ]; then
+                    url="$log_svnpath*$log_svnrev"
+                    if [ -z $(cat $urllistfile|grep -F -x "$url") ]; then
+                        echo "$url" >> $urllistfile
+                        download_list[$download_list_count]="$url"
+                        let download_list_count=download_list_count+1
+                    fi
+                fi
+            done
+            exec 4>&-
+            unlink "$urllistfile"
+
+            if [ -f "$EXTRA_DATASRC_LOW_PRIORITY" ]; then
+                exec 4<> "$EXTRA_DATASRC_LOW_PRIORITY"
+                while read url <& 4; do
+                    download_list[$download_list_count]="$url"
+                    let download_list_count=download_list_count+1
+                    shell_download_list[$shell_download_list_count]="$url"
+                    let shell_download_list_count=shell_download_list_count+1
+                done
+                exec 4>&-
+            fi
+
+            if [ "$download_script" == "1" ]; then
+                for file in "register_inputdata.sh" "register_inputdata.csh"; do
+                    if [ ! -f "$DATAROOT/$file" ]; then
+                        ok="0"
+                        for ((i = 0; i < ${#shell_download_list[*]}; i++)); do
+                            do_download "$SVN_DATA_RELATIVE_PATH/$file" "${shell_download_list[i]}" "$DATAROOT/$file" ""
+                            if [ $? -eq 0 ]; then
+                                ok="1"
+                                break
+                            fi
+                        done
+                        if [ "$ok" = "0" ]; then
+                            #TODO
+                            echo "WARNING"
+                        fi
+                    fi
+                done
+                download_script="0"
+            fi
+
+            echo $filename
+
+            target_filename="$dstfile"
+            download="1"
+            if [ -e "$dstfile" ]; then
+                if [ ! -f "$dstfile" ]; then
+                    echo "***ERROR*** $dstfile already exists but not a regular file. We do not download the new file. Please check the $dstfile and then check out this experiment again" 
+                    echo "***ERROR*** $dstfile already exists but not a regular file. We do not download the new file. Please check the $dstfile and then check out this experiment again" >> checkout_experiment.log
+                    continue
+                else
+                    local_md5=$($CHECKSUM_CMD "$dstfile")
+                    if [ "$local_md5" = "$md5sum" -o -z "$md5sum" ]; then
+                        download="0"
+                    else
+                        target_filename="$dstfile.new"
+                    fi
+                fi
+            fi
+
+            if [ "$download" = "1" ]; then
+                ok="0"
+                for ((i = 0; i < ${#download_list[*]}; i++)); do
+                    dname=$(dirname "$target_filename")
+                    mkdir -p "$dname"
+                    do_download "$SVN_DATA_RELATIVE_PATH/$filename" "${download_list[i]}" "$target_filename" "$md5sum"
+                    if [ $? -eq 0 ]; then
+                        ok="1"
+                        break
+                    fi
+                done
+
+                if [ "$ok" = "0" ]; then
+                    echo "***ERROR*** The input data file \"$filename\" with MD5 checksum \"$md5sum\" cannot be downloaded."
+                    echo "***ERROR*** The input data file \"$filename\" with MD5 checksum \"$md5sum\" cannot be downloaded." >> checkout_experiment.log
+                else
+                    if [ "$target_filename" != "$dstfile" ]; then
+                        timestamp=$(date +"%Y%m%d%H%M%S")
+                        mv "$dstfile" "$dstfile.$timestamp"
+                        echo "***WARNING*** the input data file $dstfile already exists but with different checksum. We move this file to $dstfile.$timestamp and then redownload." >> checkout_experiment.log
+                        mv "$target_filename" "$dstfile"
+                    fi
+                fi
+            fi
+
+        done
+        exec 3>&-
+        hash_destroy
+
+    else
+        echo "***ERROR*** The configuration file \"input_data_list\" does not exist. Input data files will not be downloaded and checked. Please contact the provider of the simulation setting package" 
+        echo "***ERROR*** The configuration file \"input_data_list\" does not exist. Input data files will not be downloaded and checked. Please contact the provider of the simulation setting package" >> checkout_experiment.log
+    fi
+fi
+
+if [ "$retar" = "true" ]; then
+    archive_time=$(basename $1 | awk -F. '{print $(NF-2)}')
+    new_name=$(basename "$1" | sed "s#$archive_time#$configuration_time#")
+    pushd "$TMPDIR" > /dev/null 2>&1
+    tar cf "$new_name" "config" "configure" "runcase" "compile" "clean" "patches"
+    popd > /dev/null 2>&1
+
+    mv "$TMPDIR/$new_name" .
+
+    if [ "$?" == "0" ]; then
+        echo " The Git repository lists for downloading the C-Coupler model platform are updated in the new simulation setting package \"$new_name\". You can use it for checkout_experiment next time."
+    fi
+fi
+
+rm -rf "$TMPDIR"
+
+if [ -f checkout_experiment.log ]; then
+    echo "[NOTICE]: There are some errors or wannings during the checkout of the simulation environment. Please read checkout_experiment.log for more details."
+fi
+
+

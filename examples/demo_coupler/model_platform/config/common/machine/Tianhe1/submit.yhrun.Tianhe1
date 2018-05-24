@@ -1,0 +1,84 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/28,
+#  and then modified by Dr. Li Liu
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+check=`expr $# % 4`
+if (( check != 0 ))
+then
+    echo $#
+    echo "Wrong paramters!"
+    exit 1;
+fi
+
+#Number of Models
+num_of_models=`expr $# / 4`
+
+rm -f ${log_dir}/${CASENAME}.submit.conf.${configuration_time}
+
+#paramter of mpiexec
+
+
+declare -a proc_map
+declare -a node_num_proc
+node_total_need=0
+proc_count=0
+for (( i = 0; i < num_of_models; i++ ))
+do
+    execmd[i]=$1
+    shift
+    inputnml[i]=$1
+    shift
+    num_proc[i]=$1
+    shift
+    num_thread[i]=$1
+    shift
+    if (( ${num_thread[i]} > 1 )); then
+        echo "${num_thread[i]}" 
+        echo "ERROR!!!!! Tianhe1 does not support multi threads like OpenMP currently"
+        exit 1;
+    fi
+    
+    let start_proc=proc_count
+
+    for (( j = 0; j < num_proc[i]; j++ )); do
+        finished=0
+        for (( k = 0; k < node_total_need; k++ )); do
+            if (( ${node_num_proc[k]} + ${num_thread[i]} <= $NUM_CORES_PER_NODE )); then
+                proc_map[proc_count]=$k
+                let node_num_proc[k]=node_num_proc[k]+num_thread[i]
+                finished=1
+                break
+            fi
+        done
+        if (( $finished == 0 )); then
+            proc_map[proc_count]=$node_total_need
+            node_num_proc[node_total_need]=${num_thread[i]}
+            let node_total_need=node_total_need+1
+        fi
+        let proc_count=proc_count+1
+    done
+    let end_proc=proc_count-1
+    if (( num_of_models > 1 )); then
+cat >> ${log_dir}/${CASENAME}.submit.conf.${configuration_time} << EOF
+$start_proc-$end_proc ${execmd[i]} ${inputnml[i]}
+EOF
+    fi
+    param="-n ${num_proc[i]} ${execmd[i]} ${inputnml[i]}"
+done
+
+
+let cores_need=node_total_need*NUM_CORES_PER_NODE
+echo "Request $cores_need cores"
+
+if (( num_of_models > 1 )); then
+    yhrun -J ${CASENAME} -p lasg  -n $cores_need --multi-prog  ${log_dir}/${CASENAME}.submit.conf.${configuration_time} >${log_dir}/${CASENAME}.output.${configuration_time} 2>&1 &
+else
+    yhrun -J ${CASENAME} -p lasg -n $cores_need $param >${log_dir}/${CASENAME}.output.${configuration_time} 2>&1 &
+fi
+

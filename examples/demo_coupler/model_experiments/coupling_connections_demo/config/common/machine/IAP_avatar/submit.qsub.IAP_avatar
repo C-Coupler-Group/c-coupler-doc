@@ -1,0 +1,86 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/28,
+#  and then modified by Dr. Li Liu
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+check=`expr $# % 4`
+if (( check != 0 ))
+then
+    echo $#
+    echo "Wrong paramters!"
+    exit 1;
+fi
+
+#Number of Models
+num_of_models=`expr $# / 4`
+submit_file=${log_dir}/job.submit.${configuration_time} 
+
+#paramter of mpiexec
+param="/disk1/soft/intel/impi/3.2.0.011/bin64/mpirun -r ssh -genv I_MPI_RDMA_RNDV_WRITE on -genv I_MPI_DEVICE rdssm " 
+
+declare -a proc_map
+declare -a node_num_proc
+node_total_need=0
+proc_count=0
+for (( i = 0; i < num_of_models; i++ ))
+do
+    execmd[i]=$1
+    shift
+    inputnml[i]=$1
+    shift
+    num_proc[i]=$1
+    shift
+    num_thread[i]=$1
+    shift
+    if (( ${num_thread[i]} > $NUM_CORES_PER_NODE )); then
+        echo "Warrning! ${execmd[i]} uses an overmuch number(${num_thread[i]}) of threads, which is larger than the number($NUM_CORES_PER_NODE) of cores in a node."
+        echo "The number of threads will be reset to $NUM_CORES_PER_NODE" 
+        num_thread[i]=$NUM_CORES_PER_NODE
+    fi
+    
+    if (( i > 0 ))
+    then
+        param="$param : "
+    fi
+    param="$param -np ${num_proc[i]} -env OMP_NUM_THREADS ${num_thread[i]} \"${execmd[i]}\" \"${inputnml[i]}\""
+
+    for (( j = 0; j < num_proc[i]; j++ )); do
+        finished=0
+        for (( k = 0; k < node_total_need; k++ )); do
+            if (( ${node_num_proc[k]} + ${num_thread[i]} <= $NUM_CORES_PER_NODE )); then
+                proc_map[proc_count]=$k
+                let node_num_proc[k]=node_num_proc[k]+num_thread[i]
+                finished=1
+                break
+            fi
+        done
+        if (( $finished == 0 )); then
+            proc_map[proc_count]=$node_total_need
+            node_num_proc[node_total_need]=${num_thread[i]}
+            let node_total_need=node_total_need+1
+        fi
+        let proc_count=proc_count+1
+    done
+done
+
+
+let cores_need=node_total_need*NUM_CORES_PER_NODE
+echo "Request $cores_need cores"
+
+cat > $submit_file << EOF
+#!/bin/tcsh
+#$ -S /bin/tcsh
+#$ -q q2.q
+#$ -pe impi $cores_need
+#$ -o ${log_dir}/${CASENAME}.output.${configuration_time}
+#$ -e ${log_dir}/${CASENAME}.error.${configuration_time}
+#$ -N ${CASENAME}
+EOF
+
+echo "$param" >> $submit_file
+qsub  $submit_file

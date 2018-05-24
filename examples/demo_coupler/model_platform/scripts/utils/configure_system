@@ -1,0 +1,1387 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li & Dr. Cheng Zhang on 2013/3/21,
+#  and then modified by Dr. Li Liu.
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  Dr. Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+
+export LC_ALL="POSIX"
+
+# == Functions for this script only ==
+usage() {
+    echo "usage configure [-checksum] [-bypass model1,model2,...]"
+}
+
+cleanup() {
+    hash_destroy
+    rm -rf /tmp/$$.fifo 2> /dev/null
+}
+
+error_exit() {
+    echo 
+    echo "ERROR is detected. Fail to configure the model simulation. Please fix the error!"
+    echo 
+    cleanup
+    exit 1
+}
+
+runconf() {
+    if [ -f "$2" ]; then
+        source "$2"
+    fi
+    "$1" "$2"
+}
+
+valid_date() {
+    if [[ "$1" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_positive_integer() {
+    if [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+is_nonnegative_integer() {
+    if [[ "$1" =~ ^[0-9]*$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+record_compiler(){
+    compiler=$1
+    version=$2
+    name=`trim $3`
+    CC=`grep "^ *\<$name\>" ${compiler}`
+    if [ "${CC}" != "" ]; then
+        key=`trim "${CC%\=*}"`
+        value=`trim "${CC#$key*=}"`
+        if [[ "$value" =~ "^\\$" ]]; then
+            Tname=`echo $value | sed -e 's/${//' -e 's/$(//' -e 's/$//' -e 's/}$//' -e 's/)$//'`
+            CC=`grep "^ *\<$Tname\>" ${compiler}`
+            key=`trim "${CC%\=*}"`
+            value=`trim "${CC#$key*=}"`
+        fi
+        echo -e "$name := $value" >> ${version}
+        echo -n -e "version:\t" >> ${version}
+        result=`${value} -v 2>&1`
+        echo -e "$result\n" >> ${version}
+    fi
+}
+
+# Paramters:
+#   1. ensemble index
+#   2. script name
+#   3. directory of ensemble config
+#   4. directory of running
+#   5. environment file to source before run script
+run_ensemble_conf()
+{
+    if [ $ensemble_number -eq 0 ]; then
+        return
+    fi
+    local script_filename="$3/$2"
+    if [ ! -f "$script_filename" ]; then
+        return
+    fi
+    if [ ! -x "$script_filename" ]; then
+        return
+    fi
+    export ENSEMBLE_IDX=$1
+    export ENSEMBLE_CONFIG_DIR="$3"
+    export RUNDIR="$4"
+    runconf "$script_filename" "$5"
+}
+
+backup_compiler(){
+	srcdir="$1"
+	dstdir="$2"
+	cp -r "$srcdir"/* "$dstdir"
+}
+
+# =====================================
+
+TEMP=$(getopt -a -o h -l checksum,bypass:,help -n configure -- "$@")
+if [ $? -ne 0 ]; then
+    usage
+    exit 1
+fi
+eval set -- $TEMP
+
+export CHECK_SUM="false"
+export PATH=$PATH:$SCRIPTSROOT/utils/
+
+while true; do
+    case "$1" in
+        --checksum) export CHECK_SUM="true"; shift 1 ;;
+        --bypass) BYPASS_STR="$2"; shift 2 ;;
+        --) shift; break ;;
+        -h|--help) 
+        usage
+        exit 0;;
+        *) report_logs "ERROR" "Internal error of the C-Coupler platform is detected. Please contact the C-Coupler team!"; error_exit ;;
+    esac
+done
+IFS_BAK=$IFS
+IFS=,
+bypass_models=($BYPASS_STR)
+IFS=$IFS_BAK
+
+
+if [ ! -e "${SCRIPTSROOT}" ]; then
+    report_logs "ERROR" "Cannot find the SCRIPTSROOT: \"${SCRIPTSROOT}\".\nPlease set the SCRIPTSROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform. \nConfiguration aborts."
+    exit 1 
+fi
+
+# == Include utils ==
+source "$SCRIPTSROOT/utils/common"
+source "$SCRIPTSROOT/utils/hashtable"
+# ====================
+
+hash_init
+
+if [ ! -f "${CASEROOT}/config/common/env" ]; then
+    report_logs "ERROR" "Environment variable file \"${CASEROOT}/config/common/env\" does not exist. Please check."
+    error_exit
+fi
+
+source "${CASEROOT}/config/common/env"
+
+if [ ! -e "${CODEROOT}" ]; then
+    report_logs "ERROR" "Cannot find the CODEROOT: \"${CODEROOT}\".\nPlease set the CODEROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    error_exit 
+fi
+if [ ! -e "${DATAROOT}" ]; then
+    report_logs "ERROR" "Cannot find the DATAROOT: \"${DATAROOT}\".\nPlease set the DATAROOT through source register_inputdata.sh or register_inputdata.csh under the root directory of the input data"
+    error_exit 
+fi
+if [ ! -e "${CONFIGROOT}" ]; then
+    report_logs "ERROR" "Cannot find the CONFIGROOT: \"${CONFIGROOT}\".\nPlease set the CONFIGROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    error_exit 
+fi
+if [ ! -f "${CASEROOT}/config/common/machine/${MACH}/env.${MACH}" ]; then
+    if [ ! -f "${CONFIGROOT}/common/machine/${MACH}/env.${MACH}" ]; then
+        report_logs "ERROR" "Cannot find the configuration files for the machine: \"${MACH}\".\nPlease visit the directory ${CONFIGROOT}/common/machine to verify the variable 'MACH' in the file config/common/env"
+    error_exit 
+    fi
+    cp -r ${CONFIGROOT}/common/machine/${MACH} ${CASEROOT}/config/common/machine/${MACH}
+fi
+
+# == Include utils ==
+source "$SCRIPTSROOT/utils/common"
+source "$SCRIPTSROOT/utils/hashtable"
+source "$SCRIPTSROOT/utils/check_ensemble"
+# ====================
+
+# == Initialization ==
+SCRIPT_FIFO=/tmp/$$.fifo
+mkfifo $SCRIPT_FIFO
+# ====================
+
+# Load configuration for case.conf
+sed "s#mach=\(.*\)#mach=${MACH}#g" ${CASEROOT}/config/common/case.conf > ${CASEROOT}/config/common/temp.out
+mv ${CASEROOT}/config/common/temp.out ${CASEROOT}/config/common/case.conf
+declare -a models_name
+declare -a models_realname
+declare -a models_type
+
+i=0
+while read line; do
+    if [ "$line" == "system" ]; then
+        read line
+        while true; do
+            read line
+            if [ "$line" == "}" ]; then break; fi
+            key=`trim "${line%\=*}"`
+            value=`trim "${line#$key*=}"`
+            case "$key" in
+                mach)
+                MACH="$value"
+                ;;
+                libs)
+                LIBS_STR="$value"
+                eval set -- "$value"
+                for (( j = 0; $# > 0; j++ )); do
+                    libs_name[j]="$1"
+                    shift
+                done
+                ;;
+                compset)
+                COMPSET="$value"
+                ;;
+                *)
+                ;;
+            esac
+        done
+        continue
+    fi
+
+    if [ "$line" == "common" ]; then
+        read line
+        while true; do
+            read line
+            if [ "$line" == "}" ]; then break; fi
+            key=`trim "${line%\=*}"`
+            value=`trim "${line#$key*=}"`
+            hash_put common_param "$key" "$value"
+        done
+        continue
+    fi
+
+    this_model=$(echo $line|awk '{print $1}')
+    models_name[i]="$this_model"
+    models_type[i]=$(echo $line|awk '{print $3}')
+    models_realname[i]=$(echo $line|awk '{print $5}')
+    read line
+
+    while read line
+    do
+        if [ "$line" = "}" ]; then
+            break
+        fi
+        key=`trim "${line%\=*}"`
+        value=`trim "${line#$key*=}"`
+        hash_put "model_${this_model}_value" "$key" "$value"
+        case "$key" in
+            grid|num_total_proc|num_x_proc|num_y_proc|num_thread)
+            hash_put "model_${this_model}_type" "$key" "system"
+            ;;
+            *)
+            hash_put "model_${this_model}_type" "$key" "custom"
+            ;;
+        esac
+    done
+    let i=i+1
+done < "${CASEROOT}/config/common/case.conf"
+
+
+
+# Check existence of paramters in common section
+for key in run_type run_start_date run_stop_date leap_year rest_freq_unit rest_freq_count run_start_second run_stop_second; do
+    if ! hash_exists common_param "$key"; then
+        report_logs "ERROR" "The value of variable '$key' in the common section of config/common/case.conf has not been specified.\nPlease set its value."
+        error_exit;
+    fi
+done
+
+# Check run_type
+original_run_type="$(hash_get common_param run_type)"
+if [[ !("$(hash_get common_param run_type)" =~ ^(initial|restart|continue|hybrid)$) ]]; then
+    report_logs "ERROR" "The value of variable \"run_type\" in the common section of config/common/case.conf is wrong.\nPlease set 'run_type' to be \"initial\", \"restart\", \"continue\" or \"hybrid\"."
+    error_exit
+fi
+
+
+rm -rf ${CASEROOT}/config/common/last_restart_output_info.log 2> /dev/null
+if [[ ("$(hash_get common_param run_type)" =~ ^(continue)$) ]]; then
+    for ((i = 0; i < ${#models_name[*]}; i++ )); do
+       if [ ! -e "${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log" ]; then
+           report_logs "WARNING" "The log file last_restart_output_info.log required for the continue run does not exist under \"${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data\". The continue run may be failed." $CONFIG_LOG_FILE   
+       fi
+       if [ -e "${CASEROOT}/config/common/last_restart_output_info.log" ]; then
+           if ! diff ${CASEROOT}/config/common/last_restart_output_info.log ${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log > /dev/null ; then
+              rm -rf ${CASEROOT}/config/common/last_restart_output_info.log
+              report_logs "ERROR" "The continue run cannot be proceeded because the log files last_restart_output_info.log of different component models are not the same.\nPlease check (all log files last_restart_output_info.log can be found under the directory run)."
+              error_exit
+           fi
+       fi
+       if [ -e "${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log" ]; then
+           cp ${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log ${CASEROOT}/config/common/last_restart_output_info.log
+       fi
+    done
+fi
+
+if [[ ("$(hash_get common_param run_type)" =~ ^(restart)$) || ("$(hash_get common_param run_type)" =~ ^(hybrid)$) ]]; then
+    for key in run_restart_date original_config_time original_case_name run_restart_second; do
+        if ! hash_exists common_param "$key"; then
+            report_logs "ERROR" "For the restart run or hybrid run, \"$key\" must be specified in the common section of config/common/case.conf"
+            error_exit;
+        fi
+    done
+    if ! valid_date "$(hash_get common_param run_restart_date)"; then
+        report_logs "ERROR" "The format of the value of \"run_restart_date\" in the common section of config/common/case.conf is wrong.\nThe right format is YYYY-MM-DD"
+        error_exit
+    fi
+fi
+
+if hash_exists common_param "run_reference_date"; then
+    if ! valid_date "$(hash_get common_param run_reference_date)"; then
+        report_logs "ERROR" "The format of the value of \"run_reference_date\" in the common section of config/common/case.conf is wrong.\nThe right format is YYYY-MM-DD"
+        error_exit
+    fi
+fi
+
+# Check run_start_date & run_stop_date
+if ! valid_date "$(hash_get common_param run_start_date)"; then
+    report_logs "ERROR" "The format of the value of \"run_start_date\" in the common section of config/common/case.conf is wrong.\nThe right format is YYYY-MM-DD"
+    error_exit
+fi
+if ! valid_date "$(hash_get common_param run_stop_date)"; then
+    report_logs "ERROR" "The format of the value of \"run_stop_date\" in the common section of config/common/case.conf is wrong. \nThe right format is YYYY-MM-DD"
+    error_exit
+fi
+
+# Check leap_year
+if [[ !("$(hash_get common_param leap_year)" =~ ^(true|false)$) ]]; then
+    report_logs "ERROR" "The variable \"leap_year\" in the common section of config/common/case.conf is not set correctly.\nIt must be set to either \"true\" or \"false\"."
+    error_exit
+fi
+
+# Check rest_freq_unit
+if [[ !("$(hash_get common_param rest_freq_unit)" =~ ^(seconds|days|months|years)$) ]]; then
+    report_logs "ERROR" "The variable \"rest_freq_unit\" in the common section of config/common/case.conf is not set correctly.\nIt must be set to \"seconds\", \"days\", \"months\" or \"years\"."
+    error_exit
+fi
+
+# Check run_start_second
+if ! is_nonnegative_integer "$(hash_get common_param run_start_second)"; then
+    report_logs "ERROR" "The variable \"run_start_second\" in the common section of config/common/case.conf is not set correctly.\nIt must be set to a nonnegative integer."
+    error_exit
+fi
+
+# Check run_stop_second
+if ! is_nonnegative_integer "$(hash_get common_param run_stop_second)"; then
+    report_logs "ERROR" "The variable \"run_stop_second\" in the common section of config/common/case.conf is not set correctly.\nIt must be set to a nonnegative integer."
+    error_exit
+fi
+
+# Check rest_freq_count
+if ! is_positive_integer "$(hash_get common_param rest_freq_count)"; then
+    report_logs "ERROR" "The variable \"rest_freq_count\" in the common section of config/common/case.conf is not set correctly.\nIt must be set to a positive integer."
+    error_exit
+fi
+
+configuration_time=$(date +%Y%m%d-%H%M%S)
+
+# Check ensemble
+ensemble_number=0
+if [ ! -z "$(hash_get common_param ensemble_number)" ]; then
+    ensemble_number="$(hash_get common_param ensemble_number)"
+    if ! is_positive_integer "$ensemble_number"; then
+        report_logs "ERROR" "The variable \"ensemble_number\" in the common section of config/common/case.conf is not set correctly. It must be set to a positive integer. Please verify."
+        error_exit
+    fi
+fi
+
+# Check each model
+for ((i = 0; i < ${#models_name[*]}; i++ )); do
+    hash_id="model_${models_name[i]}_value"
+    # Check num_total_proc
+    if ! is_positive_integer "$(hash_get $hash_id num_total_proc)"; then
+        report_logs "ERROR" "The variable \"num_total_proc\" in the section of model ${models_name[i]} in config/common/case.conf is not set correctly.\nIt must be set to a positive integer."
+        error_exit
+    fi
+    # Check num_thread
+    if ! is_positive_integer "$(hash_get $hash_id num_thread)"; then
+        report_logs "ERROR" "The variable \"num_thread\" in the section of model ${models_name[i]} in config/common/case.conf is not set correctly.\nIt must be set to a positive integer."
+        error_exit
+    fi
+    # Check existence of num_x_proc & num_y_proc
+    tmp_count=0
+    if hash_exists $hash_id num_x_proc; then
+        let tmp_count=tmp_count+1
+    fi
+    if hash_exists $hash_id num_y_proc; then
+        let tmp_count=tmp_count+1
+    fi
+    if (( tmp_count == 1 )); then
+        report_logs "ERROR" "The variables \"num_x_proc\" and \"num_y_proc\" must be specified simultaneously in the section of model ${models_name[i]} in config/common/case.conf."
+        error_exit
+    fi
+    if (( tmp_count == 2 )); then
+        #Check num_x_proc
+        tmp_x="$(hash_get $hash_id num_x_proc)"
+        if ! is_positive_integer "$tmp_x"; then
+            report_logs "ERROR" "The variable \"num_x_proc\" in the section of model ${models_name[i]} in config/common/case.conf is not set correctly.\nIt must be set to a positive integer."
+            error_exit
+        fi
+        #Check num_y_proc
+        tmp_y="$(hash_get $hash_id num_y_proc)"
+        if ! is_positive_integer "$tmp_y"; then
+            report_logs "ERROR" "The variable \"num_y_proc\" in the section of model ${models_name[i]} in config/common/case.conf is not set correctly.\nIt must be set to a positive integer."
+            error_exit
+        fi
+        #Check num_x_proc * num_y_proc
+        let tmp_total=tmp_x*tmp_y
+        if (( $(hash_get $hash_id num_total_proc) != tmp_total )); then
+            report_logs "ERROR" "The variables \"num_x_proc\", \"num_y_proc\" and \"num_total_proc\" in the section of model ${models_name[i]} in config/common/case.conf do not match.\n\"num_total_proc\" must be the product of \"num_x_proc\" and \"num_y_proc\""
+            error_exit
+        fi
+    fi
+done
+
+export CASEROOT
+if ! check_ensemble_run_directory "$ensemble_number"; then
+    report_logs "ERROR" "The directory run already exists and the ensemble member number under the directory run is inconsistent with the variable \"ensemble_number\" in the \"config/common/case.conf\" (when \"ensemble_number\" is not set, the ensemble member number is 0)\nPlease verify: modify \"config/common/case.conf\", or remove the directory run, or duplicate the current simulation to a new simulation."
+    error_exit
+fi
+
+rm -f ${CASEROOT}/config/common/reproducibility/compiler_version
+#rm -f ${CASEROOT}/config/common/reproducibility/input_data_list
+rm -f ${CASEROOT}/config/common/reproducibility/code_dir_list
+
+ensemble_idx=1
+if [ $ensemble_number -eq 0 ]; then
+    ensemble_idx=0
+fi
+
+for (( ; ensemble_idx <= $ensemble_number; ensemble_idx++ )); do
+    if [ $ensemble_number -gt 0 ]; then
+        echo
+        echo
+        echo
+        echo "************* Configuration for ensemble member $ensemble_idx ************"
+        echo
+        fix=$(echo -n "$ensemble_number"|wc|awk '{print $3}')
+        formated_id=$(printf "%0${fix}d" $ensemble_idx)
+        RUN_DIR="${CASEROOT}/run/ensemble_${formated_id}"
+    else
+        RUN_DIR="${CASEROOT}/run"
+    fi
+    #Create "run" directory if not exists
+    echo "============ Creating run directory ==========="
+    mymkdir "${RUN_DIR}"
+    mymkdir "${RUN_DIR}/all"
+    mymkdir "${RUN_DIR}/all/grids"
+    mymkdir "${RUN_DIR}/all/remap_weights_files"
+    mymkdir "${RUN_DIR}/all/remap_weights_files/remap_weights_files_by_CoR"
+    mymkdir "${RUN_DIR}/all/remap_weights_files/remap_weights_files_by_SCRIP"
+    for ((i = 0; i < ${#models_name[*]}; i++ )); do
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/data"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/exe"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/obj"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/build_logs"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/run_logs"
+        mymkdir "${RUN_DIR}/${models_type[i]}/${models_name[i]}/src"
+    done
+
+    for (( i = 0; i < ${#libs_name[*]}; i++ )); do
+        mymkdir "${RUN_DIR}/lib/${libs_name[i]}"
+        mymkdir "${RUN_DIR}/lib/${libs_name[i]}/exe"
+        mymkdir "${RUN_DIR}/lib/${libs_name[i]}/obj"
+        mymkdir "${RUN_DIR}/lib/${libs_name[i]}/build_logs"
+        mymkdir "${RUN_DIR}/lib/${libs_name[i]}/src"
+        mymkdir "${CASEROOT}/config/lib/${libs_name[i]}"
+    done
+
+    #Copy configuration of thucpl in this compset into "run" directory
+    for (( i = 0; i < ${#models_name[*]}; i++ ))
+    do
+        if [ ! -e ${RUN_DIR}/${models_type[i]}/${models_name[i]}/data/CCPL_configs ]; then
+            echo -n "  Copying C-Coupler configurations of ${models_name[i]} ... "
+            ln -fs "${CASEROOT}/config/common/CCPL_configs" "${RUN_DIR}/${models_type[i]}/${models_name[i]}/data/CCPL_configs"
+            echo "done"
+        fi
+        if [ -e $CASEROOT/config/${models_type[i]}/${models_name[i]}/private_field_attribute.cfg ]; then
+            rm -f ${CASEROOT}/config/common/CCPL_configs/${models_name[i]}_private_field_attribute.cfg
+            ln -fs "$CASEROOT/config/${models_type[i]}/${models_name[i]}/private_field_attribute.cfg" "${CASEROOT}/config/common/CCPL_configs/${models_name[i]}_private_field_attribute.cfg" 
+        fi
+        if [ -e $CASEROOT/config/${models_type[i]}/${models_name[i]}/field_buf_register.cfg ]; then
+            rm -f ${CASEROOT}/config/common/CCPL_configs/${models_name[i]}_field_buf_register.cfg
+            ln -fs "$CASEROOT/config/${models_type[i]}/${models_name[i]}/field_buf_register.cfg" "${CASEROOT}/config/common/CCPL_configs/${models_name[i]}_field_buf_register.cfg" 
+        fi
+    done
+
+
+    source ${CASEROOT}/config/common/machine/${MACH}/env.${MACH}
+
+    #Generate configuration for compilation
+
+    LIBS_LIST=${CASEROOT}/config/lib/libs.cfg
+
+    MAKEFILE=${CONFIGROOT}/common/system/makefile/Makefile.libs
+    MAKEDEP=${CONFIGROOT}/common/system/makedep/makdep.c
+
+    if [ -f ${LIBS_LIST} ]; then
+        rm ${LIBS_LIST} 
+    fi
+
+    for (( i = 0; i < ${#libs_name[*]}; i++ ))
+    do
+        echo "${libs_name[i]}" >> ${LIBS_LIST}
+        echo -e "\t${MAKEFILE}" >> ${LIBS_LIST}
+        echo -e "\t${MAKEDEP}" >> ${LIBS_LIST}
+    done
+
+
+    ENV_COMPILE=${CASEROOT}/config/common/env_compile
+
+    touch ${ENV_COMPILE}
+
+    cat ${CASEROOT}/config/common/env > ${ENV_COMPILE}
+
+    cat >> ${ENV_COMPILE} << EOF
+export LIBROOT=${RUN_DIR}/lib
+export INCROOT=${RUN_DIR}/lib/include
+export COMMON_COMPILER=${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg
+export ENSEMBLE_NUM=$ensemble_number
+EOF
+
+    cat ${CASEROOT}/config/common/machine/${MACH}/env.${MACH} >> ${ENV_COMPILE}
+
+    #Generate configuration for running
+    cat > "${CASEROOT}/config/common/run.conf" << END
+model_list=${CASEROOT}/config/common/models.conf
+submit_script=${CASEROOT}/config/common/machine/${MACH}/submit.${SUBMITTER}.${MACH}
+machine_env=${CASEROOT}/config/common/machine/${MACH}/env.${MACH}
+configuration_time=${configuration_time}
+ensemble_num=$ensemble_number
+END
+
+    mymkdir $CASEROOT/configure_history
+    mymkdir $CASEROOT/configure_history/experiment_setups
+    mymkdir $CASEROOT/configure_history/configure_logs
+    mymkdir $CASEROOT/config/common/reproducibility/
+    mymkdir $CASEROOT/job_logs
+    export CONFIG_LOG_FILE=$CASEROOT/configure_history/configure_logs/configure.log.${configuration_time}
+
+    echo "configure model experiment ${CASEROOT##*/} by user $USER on computer $(hostname) at time $configuration_time" >> $CONFIG_LOG_FILE
+    echo  >> $CONFIG_LOG_FILE
+    echo  >> $CONFIG_LOG_FILE
+
+    echo xxx >> comp_list.cfg
+    rm comp_list.cfg
+    for (( i = 0; i < ${#models_name[*]}; i++ ))
+    do
+        echo -e ${models_name[i]}'\t'${models_type[i]} >> comp_list.cfg
+    done
+    cp comp_list.cfg ${CASEROOT}/config/common/CCPL_configs/
+    rm comp_list.cfg
+
+
+    CODEROOT=$(echo $CODEROOT | sed 's#/$##')
+    for(( i=0; i<${#libs_name[*]}; i++))
+    do
+        echo -n "  Configuring library ${libs_name[i]} ... "
+        run_ensemble_conf $ensemble_idx "pre_config" "${CASEROOT}/config/ensemble/common" "${RUN_DIR}/lib/${libs_name[i]}" "${ENV_COMPILE}"
+        run_ensemble_conf $ensemble_idx "pre_config" "${CASEROOT}/config/ensemble/lib/${libs_name[i]}" "${RUN_DIR}/lib/${libs_name[i]}" "${ENV_COMPILE}"
+        Srclist=${CASEROOT}/config/common/.tmp_src_list
+        ${CASEROOT}/config/lib/${libs_name[i]}/form_src.sh ${ENV_COMPILE} 0 ${Srclist}
+
+        tmproot=$(pwd)
+
+        while read path
+        do
+            if [ -f $path ] ; then
+                fileroot=$(dirname $path)
+                fileroot=$(cd $fileroot; pwd)
+                filename=$(basename $path)
+                fullname="$fileroot/$filename"
+            elif [ -d $path ] ; then
+                cd $path
+                fileroot=$(pwd)
+                fullname="$fileroot"
+            else
+                echo 
+                echo "ERROR!!!!! The code file or directory \"$path\" does not exist."
+                echo "Please check ${CASEROOT}/config/lib/${libs_name[i]}/form_src.sh"
+                error_exit
+            fi
+
+            tmptype=$(echo $fileroot | sed "s#$CODEROOT/##" | awk -F / '{print $1}')
+            tmpname=$(echo $fileroot | sed "s#$CODEROOT/##" | awk -F / '{print $2}')
+
+            if [ -z "${tmptype}" -o -z "${tmpname}" ] ; then
+                echo 
+                echo "ERROR!!!!! The code file or directory \"$path\" for the library ${libs_name[i]} is put under a wrong directory."
+                echo "Please put it under the CODEROOT \"$CODEROOT\" and then modify the file ${CASEROOT}/config/lib/${libs_name[i]}/form_src.sh"
+                error_exit
+            fi
+            echo ${fullname} >> ${CASEROOT}/config/common/reproducibility/code_dir_list
+        done < ${Srclist}
+
+        run_ensemble_conf $ensemble_idx "post_config" "${CASEROOT}/config/ensemble/lib/${libs_name[i]}" "${RUN_DIR}/lib/${libs_name[i]}" "${ENV_COMPILE}"
+        run_ensemble_conf $ensemble_idx "post_config" "${CASEROOT}/config/ensemble/common" "${RUN_DIR}/lib/${libs_name[i]}" "${ENV_COMPILE}"
+
+        cd ${tmproot}
+        rm ${CASEROOT}/config/common/.tmp_src_list
+        echo "done"
+    done
+
+
+    if [ -x "${CASEROOT}/config/common/CCPL_configs/link_CoR_data.sh" ]; then
+        cat > /tmp/env_$$.all << END
+#!/bin/bash
+export RUN_ALL_DIR="${RUN_DIR}/all"
+export PATH=$PATH:$SCRIPTSROOT/utils/
+END
+        runconf "${CASEROOT}/config/common/CCPL_configs/link_CoR_data.sh" "/tmp/env_$$.all"
+        rm /tmp/env_$$.all
+    fi
+
+
+    if [ -e $CASEROOT/config/common/reproducibility/configure.log* ]; then
+        previous_case_name=$(grep "configure model experiment" $CASEROOT/config/common/reproducibility/configure.log* | awk '{print $4}')
+        export PREVIOUS_CASE_NAME="$previous_case_name"
+    else 
+        export PREVIOUS_CASE_NAME="${CASEROOT##*/}"
+    fi
+
+
+    #Call exlusive configured scripts for each model
+    for (( i = 0; i < ${#models_name[*]}; i++ ))
+    do
+        hash_id="model_${models_name[i]}_value"
+        num_x_proc=0
+        num_y_proc=0
+        if hash_exists $hash_id num_x_proc; then
+            num_x_proc="$(hash_get $hash_id num_x_proc)"
+        fi
+        if hash_exists $hash_id num_y_proc; then
+            num_y_proc="$(hash_get $hash_id num_y_proc)"
+        fi
+        num_total_proc=$(hash_get $hash_id num_total_proc)
+
+        ORIGINAL_CASE_NAME="$(hash_get common_param original_case_name)"
+        RUN_RESTART_DATE="$(hash_get common_param run_restart_date)"
+        RUN_RESTART_SECOND="$(hash_get common_param run_restart_second)"
+        if [ $ensemble_number -gt 0 ]; then
+            COMP_LOG_FILENAME="${RUN_DIR}/${models_type[i]}/${models_name[i]}/run_logs/${CASEROOT##*/}.ensemble_${ensemble_idx}.${models_name[i]}.log.$configuration_time"
+        else
+            COMP_LOG_FILENAME="${RUN_DIR}/${models_type[i]}/${models_name[i]}/run_logs/${CASEROOT##*/}.${models_name[i]}.log.$configuration_time"
+        fi
+        model_name="${models_name[i]}"
+        echo -n "  Configuring model $model_name ... "
+        cat > /tmp/env_$$.$model_name << END
+#!/bin/bash
+export MODEL_NAME="${models_name[i]}"
+export COMP_RUN_DATA_DIR="${RUN_DIR}/${models_type[i]}/${models_name[i]}/data"
+export COMP_MODEL_NML="${models_name[i]}.stdin"
+export CONFIGURATION_TIME="$configuration_time"
+export COMP_LOG_FILENAME="${COMP_LOG_FILENAME}"
+export NAMELIST_DST_DIR="${RUN_DIR}/${models_type[i]}/${models_name[i]}/data"
+export DATA_DST_DIR="${RUN_DIR}/${models_type[i]}/${models_name[i]}/data"
+export DATAROOT="$DATAROOT"
+export DATA_SRC_DIR="$DATAROOT/${models_type[i]}/${models_realname[i]}"
+export MODEL_REALNAME="${models_realname[i]}"
+export CASE_NAME="${CASEROOT##*/}"
+export RUN_ALL_DIR="${RUN_DIR}/all"
+export num_x_proc="$num_x_proc"
+export num_y_proc="$num_y_proc"
+export num_total_proc="$num_total_proc"
+export COMPSET="$COMPSET" 
+export CODEROOT="$CODEROOT" 
+export PATH=$PATH:$SCRIPTSROOT/utils/
+export COMPONENT_CONFIG_ROOT=${CASEROOT}/config/${models_type[i]}/${models_name[i]}/
+export COMPONENT_PLATFORM_CONFIG_ROOT=${CONFIGROOT}/${models_type[i]}/${models_realname[i]}/
+export configuration_time="${configuration_time}"
+export ORIGINAL_CASE_NAME="$ORIGINAL_CASE_NAME"
+export RUN_RESTART_DATE="$RUN_RESTART_DATE"
+export RUN_RESTART_SECOND="$RUN_RESTART_SECOND"
+END
+
+        hash_keys common_param > $SCRIPT_FIFO &
+        while read index_key
+        do
+            cat >> /tmp/env_$$.$model_name << END
+export $(tr '[a-z]' '[A-Z]' <<< "${index_key}")="$(hash_get common_param ${index_key})"
+END
+        done < "$SCRIPT_FIFO"
+
+        hash_keys "model_${model_name}_value" > $SCRIPT_FIFO &
+        while read index_key
+        do
+            cat >> /tmp/env_$$.$model_name << END
+export $(tr '[a-z]' '[A-Z]' <<< "${index_key}")="$(hash_get model_${model_name}_value ${index_key})"
+END
+        done < "$SCRIPT_FIFO"
+
+        if [ "$original_run_type" = "continue" ]; then
+            sed -i -e "s#RUN_TYPE.*#export RUN_TYPE=\"restart\"#" /tmp/env_$$.$model_name
+            if [ -e "${CASEROOT}/run/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log" ]; then
+                for keyword in ORIGINAL_CASE_NAME ORIGINAL_CONFIG_TIME RUN_RESTART_DATE RUN_RESTART_SECOND; do
+                    line=`grep -i $keyword "${RUN_DIR}/${models_type[i]}/${models_name[i]}/data/last_restart_output_info.log"` 
+                    value=`echo $line | sed 's#.*=##'` 
+                    if grep -i $keyword /tmp/env_$$.$model_name > /dev/null ; then
+                        sed -i -e "s#$keyword.*#export $keyword=$value#" /tmp/env_$$.$model_name
+                    else
+                        cat >> /tmp/env_$$.$model_name << END
+export $keyword=$value
+END
+                    fi
+                done
+            fi
+            cat >> /tmp/env_$$.$model_name << END
+export CONTINUE_RUN="true"
+END
+        else
+            cat >> /tmp/env_$$.$model_name << END
+export CONTINUE_RUN="false"
+END
+        fi
+
+        run_ensemble_conf $ensemble_idx "pre_config" "${CASEROOT}/config/ensemble/common" "${RUN_DIR}/${models_type[i]}/${models_name[i]}" "/tmp/env_$$.$models_name"
+        run_ensemble_conf $ensemble_idx "pre_config" "${CASEROOT}/config/ensemble/${models_type[i]}/${models_name[i]}" "${RUN_DIR}/${models_type[i]}/${models_name[i]}" "/tmp/env_$$.$models_name"
+
+        if [ $ensemble_number -gt 0 ]; then
+            export ENSEMBLE_IDX=$ensemble_idx
+        else
+            export ENSEMBLE_IDX=-1 
+        fi
+        runconf "${CONFIGROOT}/common/system/namelist/gen_coupling_nml.sh" "/tmp/env_$$.$model_name"
+        export BYPASS_CONFIGURATION="FALSE"
+        for ((j=0;j<${#bypass_models[*]};j++))
+        do
+            if [ "${bypass_models[j]}" == "${models_name[i]}" ]; then
+                export BYPASS_CONFIGURATION="TRUE" 
+                break
+            fi
+        done
+        if [ -x "${CASEROOT}/config/${models_type[i]}/${models_name[i]}/config.sh" ]; then
+            runconf "${CASEROOT}/config/${models_type[i]}/${models_name[i]}/config.sh" "/tmp/env_$$.$model_name"
+            if [ ${models_type[i]} = "cesm" ]; then
+                model_pes=$(head -n 1 /tmp/${models_realname[i]}_pes | awk '{print $NF}')
+                sed -i -e "/^.*:\s*${models_realname[i]}\$/,/^}/s/num_total_proc=.*/num_total_proc=${model_pes}/g" ${CASEROOT}/config/common/case.conf
+                hash_put "model_${models_name[i]}_value" "num_total_proc" "${model_pes}"
+                rm /tmp/${models_realname[i]}_pes
+            fi
+
+        fi
+        if [ ! -e "$DATA_DST_DIR/grids" ]; then
+            ln -fs "${RUN_DIR}/all/grids" "$DATA_DST_DIR"
+        fi
+        if [ ! -e "$DATA_DST_DIR/remap_weights_files" ]; then
+            ln -fs "${RUN_DIR}/all/remap_weights_files" "$DATA_DST_DIR"
+        fi
+
+        Srclist=${CASEROOT}/config/common/.tmp_src_list
+        ${CASEROOT}/config/${models_type[i]}/${models_name[i]}/form_src.sh ${ENV_COMPILE} 0 ${Srclist}
+        #cat ${CASEROOT}/config/common/.tmp_src_list >> ${CASEROOT}/config/common/reproducibility/code_dir_list
+        tmproot=$(pwd)
+
+        while read path
+        do
+            if [ -f $path ] ; then
+                fileroot=$(dirname $path)
+                fileroot=$(cd $fileroot; pwd)
+                filename=$(basename $path)
+                fullname="$fileroot/$filename"
+            elif [ -d $path ] ; then
+                cd $path
+                fileroot=$(pwd)
+                fullname="$fileroot"
+            else
+                echo 
+                echo "ERROR!!!!! The code file or directory \"$path\" does not exist."
+                echo "Please check ${CASEROOT}/config/${models_type[i]}/${models_name[i]}/form_src.sh"
+                error_exit
+            fi
+
+            tmptype=$(echo $fileroot | sed "s#$CODEROOT/##" | awk -F / '{print $1}')
+            tmpname=$(echo $fileroot | sed "s#$CODEROOT/##" | awk -F / '{print $2}')
+
+            if [ -z "${tmptype}" -o -z "${tmpname}" ] ; then
+                echo 
+                echo "ERROR!!!!! The code file or directory \"$path\" for the component model ${models_name[i]} of type ${models_type[i]} is put under a wrong directory."
+                echo "Please put it under the CODEROOT \"$CODEROOT\" and then modify the file ${CASEROOT}/config/${models_type[i]}/${models_name[i]}/form_src.sh"
+                error_exit
+            fi
+            echo ${fullname} >> ${CASEROOT}/config/common/reproducibility/code_dir_list
+        done < ${Srclist}
+
+        cd ${tmproot}
+
+        run_ensemble_conf $ensemble_idx "post_config" "${CASEROOT}/config/ensemble/${models_type[i]}/${models_name[i]}" "${RUN_DIR}/${models_type[i]}/${models_name[i]}" "/tmp/env_$$.$models_name"
+        run_ensemble_conf $ensemble_idx "post_config" "${CASEROOT}/config/ensemble/common" "${RUN_DIR}/${models_type[i]}/${models_name[i]}" "/tmp/env_$$.$models_name"
+
+        rm /tmp/env_$$.$model_name
+        rm ${CASEROOT}/config/common/.tmp_src_list
+        echo "done"
+    done
+done
+
+#Generate input_data_index & input_data_log
+rm -rf "${CASEROOT}/config/common/reproducibility/input_data_index"
+rm -rf "${CASEROOT}/config/common/reproducibility/input_data_log.new"
+if [ ! -e "${CASEROOT}/config/common/reproducibility/input_data_log" ]; then
+    touch "${CASEROOT}/config/common/reproducibility/input_data_log"
+fi
+while read filename checksum svnrev svnpath
+do
+    if [ ! -z "$checksum" ]; then
+        echo "$filename $checksum" >> "${CASEROOT}/config/common/reproducibility/input_data_index"
+        flag_written=0
+        flag_svn=1
+        flag_can_download=0
+        if [ -z "$svnrev" ]; then
+            svnrev="-"
+            svnpath="-"
+            flag_svn=0
+        else
+            flag_can_download=1
+        fi
+        while read log_time log_filename log_checksum log_svnrev log_svnpath
+        do
+            if [ "$filename" != "$log_filename" ]; then
+                continue
+            fi
+            if [ "$checksum" != "$log_checksum" -o "$svnrev" != "$log_svnrev" -o "$svnpath" != "$log_svnpath" ]; then
+                if [ "$flag_written" == "0" ]; then
+                    echo "$configuration_time $filename $checksum $svnrev $svnpath" >> "${CASEROOT}/config/common/reproducibility/input_data_log.new"
+                fi
+            fi
+            flag_written=1
+            if [ "$flag_svn" == "1" ]; then
+                break
+            fi
+            if [ "$log_svnrev" != "-" -a "$checksum" == "$log_checksum" ]; then
+                flag_can_be_downloaded=1
+                break
+            fi
+        done < "${CASEROOT}/config/common/reproducibility/input_data_log"
+        if [ "$flag_can_be_downloaded" == "0" ]; then
+            report_logs "WARNING" "Input data file \"${DATAROOT}/$filename\" is not managed by SVN (or SVN is not available on your computer) and as a result this data file may not be able to be successfully downloaded in the future reproductions of the simulation. We advise you to fix this problem." $CONFIG_LOG_FILE
+        fi
+        if [ "$flag_written" == "0" ]; then
+            echo "$configuration_time $filename $checksum $svnrev $svnpath" >> "${CASEROOT}/config/common/reproducibility/input_data_log.new"
+        fi
+    else
+        echo "$filename" >> "${CASEROOT}/config/common/reproducibility/input_data_index"
+    fi
+done < "${CASEROOT}/config/common/reproducibility/input_data_list"
+cat "${CASEROOT}/config/common/reproducibility/input_data_log" >> "${CASEROOT}/config/common/reproducibility/input_data_log.new"
+mv "${CASEROOT}/config/common/reproducibility/input_data_log.new" "${CASEROOT}/config/common/reproducibility/input_data_log"
+#rm -rf "${CASEROOT}/config/common/reproducibility/input_data_list"
+
+#Generate models.conf
+rm -f "${CASEROOT}/config/common/models.conf"
+for (( i = 0; i < ${#models_name[*]}; i++ )); do
+    this_model=${models_name[i]}
+    cat >> "${CASEROOT}/config/common/models.conf" << END
+${models_name[i]}
+{
+    type=${models_type[i]}
+    exefile=${RUN_DIR}/${models_type[i]}/${models_name[i]}/exe/${models_name[i]}
+    makefile=${CONFIGROOT}/common/system/makefile/Makefile.models
+    makedep=${CONFIGROOT}/common/system/makedep/makdep.c
+END
+    hash_keys "model_${this_model}_value" > $SCRIPT_FIFO &
+    while read index_key
+    do
+        if [ "$(hash_get model_${this_model}_type $index_key)" == "system" ]
+        then
+            echo "    ${index_key}=$(hash_get model_${this_model}_value $index_key)" >> "${CASEROOT}/config/common/models.conf"
+        fi
+    done < "$SCRIPT_FIFO"
+    cat >> "${CASEROOT}/config/common/models.conf" << END
+}
+END
+done
+
+
+
+#set the variables related to NetCDF
+#echo "Set the variables of NetCDF"
+compiler="${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg"
+
+unset=`grep -P "^[ |\t]*NETCDF(INC|LIB){1}[ |\t]*:=" ${compiler} | grep "NONE"`
+if [ -n "$unset" ]; then
+    ncpath=`which nc-config 2> /dev/null`
+    if [ -f "$ncpath" ]; then
+        netcdfinc=`nc-config --fflags`
+        netcdfinc=`trim "$netcdfinc"`
+        if [ "$netcdfinc" = "" ] ;then
+            netcdfinc=`nc-config --cflags`
+            netcdfinc=`trim "$netcdfinc"`
+        fi
+        netcdflib=`nc-config --flibs`
+        netcdflib=`trim "$netcdflib"`
+        if [ "$netcdflib" = "" ] ;then
+            netcdflib=`nc-config --libs`
+            netcdflib=`trim "$netcdflib"`
+        fi
+
+        sed -i -e "s#^[ |\t]*NETCDFINC[ |\t]*:=.*#NETCDFINC\t:= $netcdfinc#" $compiler
+        sed -i -e "s#^[ |\t]*NETCDFLIB[ |\t]*:=.*#NETCDFLIB\t:= $netcdflib#" $compiler
+    fi
+fi
+
+unset="true"
+path=`grep -P "^[ |\t]*MPILIB[ |\t]*:=" ${compiler} | sed "s#^[ |\t]*MPILIB[ |\t]*:=##"`
+for name in $path
+do
+    if [[ "$name" =~ -L.* ]]; then
+        name=$(echo "$name" | sed "s#-L##")
+        ls "$name"/libmpi* > /dev/null 2>&1
+        if [ "$?" = "0" ]; then
+            unset="false"
+        fi
+        break
+    fi
+done
+
+if [ "$unset" = "false" ]; then
+    unset="true"
+    path=`grep -P "^[ |\t]*MPIINC[ |\t]*:=" ${compiler} | sed "s#^[ |\t]*MPIINC[ |\t]*:=##"`
+    for name in $path
+    do
+        if [[ "$name" =~ -I.* ]]; then
+            name=$(echo "$name" | sed "s#-I##")
+            ls "$name"/mpi*.h > /dev/null 2>&1
+            if [ "$?" = "0" ]; then
+                unset="false"
+            fi
+            break
+        fi
+    done
+fi
+
+if [ "$unset" = "true" ]; then
+    FC=$(grep -P "^[ |\t]*FC[ |\t]*:=" ${compiler} | sed "s#^[ |\t]*FC[ |\t]*:=##")
+    mpipath=$(eval "which $FC")
+    mpipath=$(dirname "$mpipath")
+    mpiinc=$(echo $mpipath | sed "s#/bin#/include#")
+    mpilib=$(echo $mpipath | sed "s#/bin#/lib#")
+
+    sed -i -e "s#^[ |\t]*MPIINC[ |\t]*:=.*#MPIINC\t:= -I$mpiinc#" $compiler
+    sed -i -e "s#^[ |\t]*MPILIB[ |\t]*:=.*#MPILIB\t:= -L$mpilib#" $compiler
+fi
+
+#check and then set the variables related to MPI and NETCDF in the fundamental compiling option file 
+compiler="${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg"
+for SOFTWARE in MPI  NETCDF; do
+    for DIR in INC  LIB; do
+        Is_set=`grep -P "^[ |\t]*${SOFTWARE}${DIR}[ |\t]*:=" $compiler`
+        if [ -z "$Is_set" ]; then
+            if [ "$SOFTWARE" = "MPI" -a "$DIR" = "INC" ]; then
+                echo "Unset MPI include in the compiling option file."
+            elif [ "$SOFTWARE" = "MPI" -a "$DIR" = "LIB" ]; then
+                echo "Unset MPI library in the compiling option file."
+            elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "INC" ]; then
+                echo "Unset NetCDF include in the compiling option file."
+            elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "LIB" ]; then
+                echo "Unset NetCDF library in the compiling option file."
+            fi
+            echo " (1) Don't set the compling option."
+            echo " (2) Set the compling option."
+            while true; do
+                read -p "Please select a choice: " choice
+                case "$choice" in
+                    1|2)
+                    break;
+                    ;;
+                    *)
+                    ;;
+                esac
+            done
+            if [ "$choice" = "1" ]; then
+                continue
+            else
+                echo "${SOFTWARE}${DIR} := " >> ${compiler}
+            fi
+        fi
+
+        softdir=`grep -P "^[ |\t]*${SOFTWARE}${DIR}[ |\t]*:=" $compiler | sed 's#.*:=##'`
+        eval set -- "$softdir"
+        exist="true"
+        match="false"
+        if [ "$DIR" = "INC" ]; then
+            MATCH_PATTEN="-I"
+        else
+            MATCH_PATTEN="-L"
+        fi
+        options=""
+        while [ $# -gt 0 ]
+        do
+            if [[ "$1" =~ ${MATCH_PATTEN}.* ]]; then
+                match="true"
+                dir="${1#"${MATCH_PATTEN}"}"
+                if [ ! -d "$dir" ]; then
+                    exist="false"
+                    break
+                else
+                    if [ "$SOFTWARE" = "MPI" -a "$DIR" = "INC" ]; then
+                        ls $dir/mpi*.h >& /dev/null
+                    elif [ "$SOFTWARE" = "MPI" -a "$DIR" = "LIB" ]; then
+                        ls $dir/libmpi* >& /dev/null
+                    elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "INC" ]; then
+                        ls $dir/netcdf*.h >& /dev/null
+                    elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "LIB" ]; then
+                        ls $dir/libnetcdf* >& /dev/null
+                    fi
+
+                    if [ "$?" != "0" ]; then
+                        exist="false"
+                        break
+                    fi
+                fi
+                options="$options $1"
+            elif [[ "$1" =~ -.* ]]; then
+                options="$options $1"
+            else
+                report_logs "NOTICE" "The compiling option \"${SOFTWARE}${DIR}\" in config/common/machine/${MACH}/common_compiler.${MACH}.cfg is wrong: \"$1\" is not a legal option. We remove it. "
+            fi
+            shift
+        done
+        if [ "$match" = "false" ]; then
+            exist="false"
+        fi
+
+        softdir="$options"
+        sed -i -e "s#^[ |\t]*${SOFTWARE}${DIR}[ |\t]*:=.*#${SOFTWARE}${DIR}\t:= ${softdir}#" $compiler
+
+        if [ -z "$softdir" -o "$exist" = "false" ]; then
+            while [ true ]
+            do
+                if [ "$DIR" = "INC" ]; then
+                    echo "  Please enter the full path of the include directory of $SOFTWARE:"
+                else
+                    echo "  Please enter the full path of the library directory of $SOFTWARE:"
+                fi
+
+                read -e resp
+
+                if [ "$SOFTWARE" = "MPI" -a "$DIR" = "INC" ]; then
+                    ls $resp/mpi*.h >& /dev/null
+                elif [ "$SOFTWARE" = "MPI" -a "$DIR" = "LIB" ]; then
+                    ls $resp/libmpi* >& /dev/null
+                elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "INC" ]; then
+                    ls $resp/netcdf*.h >& /dev/null
+                elif [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "LIB" ]; then
+                    ls $resp/libnetcdf* >& /dev/null
+                fi
+
+                if [ "$?" = "0" ]; then
+                    break
+                fi
+
+                echo "  Invalid path: $resp."
+            done
+
+            if [ "$SOFTWARE" = "NETCDF" -a "$DIR" = "LIB" ]; then
+                netcdflib=$resp
+                resp=""
+                if [ -f "$netcdflib/libnetcdff.a" -o -f "$netcdflib/libnetcdff.so" ]; then
+                    resp=" -lnetcdff"
+                fi
+                if [ -f "$netcdflib/libnetcdf.a" -o -f "$netcdflib/libnetcdf.so" ]; then
+                    resp="$resp -lnetcdf"
+                fi
+                if [ -z "$resp" ]; then
+                    echo '  Please enter how to link the NetCDF library (-lnetcdf/-lnetcdff).'
+                    read -e resp
+                fi
+                netcdflib="$netcdflib $resp"
+                sed -i -e "s#^[ |\t]*NETCDFLIB[ |\t]*:=.*#NETCDFLIB\t:= -L$netcdflib#" $compiler
+            else
+                sed -i -e "s#^[ |\t]*${SOFTWARE}${DIR}[ |\t]*:=.*#${SOFTWARE}${DIR}\t:= ${MATCH_PATTEN}${resp}#" $compiler
+            fi
+        fi
+    done
+done
+
+#record the information of compiler
+echo -n "  Recording the version of compilers used ... "
+version="${CASEROOT}/config/common/reproducibility/compiler_version"
+rm -f ${version}
+
+compiler="${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg"
+echo "Common Compiler{" > ${version}
+record_compiler "${compiler}" "${version}" "CC"
+record_compiler "${compiler}" "${version}" "CXX"
+record_compiler "${compiler}" "${version}" "FC"
+record_compiler "${compiler}" "${version}" "LD"
+echo "}" >> ${version}
+
+for(( i=0; i<${#models_name[*]}; i++))
+do
+    compiler="${CASEROOT}/config/${models_type[i]}/${models_name[i]}/compiler.cfg"
+    echo "${models_name[i]}{" >> ${version}
+    if [ -e ${compiler} ]; then
+        record_compiler "${compiler}" "${version}" "CC"
+        record_compiler "${compiler}" "${version}" "CXX"
+        record_compiler "${compiler}" "${version}" "FC"
+        record_compiler "${compiler}" "${version}" "LD"
+    fi
+    echo "}" >> ${version}
+done
+
+for(( i=0; i<${#libs_name[*]}; i++))
+do
+    compiler="${CASEROOT}/config/lib/${libs_name[i]}/compiler.cfg"
+    echo "${libs_name[i]}{" >> ${version}
+    if [ -e ${compiler} ]; then
+        record_compiler "${compiler}" "${version}" "CC"
+        record_compiler "${compiler}" "${version}" "CXX"
+        record_compiler "${compiler}" "${version}" "FC"
+        record_compiler "${compiler}" "${version}" "LD"
+    fi
+    echo "}" >> ${version}
+done
+
+echo "done"
+
+
+#svn info "$CODEROOT" > ${CASEROOT}/config/common/reproducibility/repository_version_info
+while read path
+do
+    if [ -f $path ]; then
+        path=$(dirname "$path")
+    fi
+    pushd $path > /dev/null 2>&1
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        continue
+    fi
+    gitroot=$(git rev-parse --show-toplevel 2>/dev/null)
+    popd > /dev/null 2>&1
+    if ! echo $gitroot|grep "^$CODEROOT/" > /dev/null 2>&1; then
+        continue
+    fi
+    pushd $gitroot > /dev/null 2>&1
+    git status > /dev/null 2>&1
+    if [ "$?" != "0" ]; then
+        continue
+    fi
+    popd > /dev/null 2>&1
+    gitpath=$(echo $gitroot|sed "s#$CODEROOT/\(.*\)#\1#g"|sed "s#/#=#g")
+    hash_put "code_dir_list" "$gitpath" "$gitroot"
+done < "${CASEROOT}/config/common/reproducibility/code_dir_list"
+
+rm -f ${CASEROOT}/config/common/reproducibility/repository_version_info
+touch ${CASEROOT}/config/common/reproducibility/repository_version_info
+rm -f ${CASEROOT}/config/common/reproducibility/repository_version_log.new
+touch ${CASEROOT}/config/common/reproducibility/repository_version_log.new
+if [ ! -e ${CASEROOT}/config/common/reproducibility/repository_version_log ]; then
+    touch ${CASEROOT}/config/common/reproducibility/repository_version_log
+fi
+hash_keys code_dir_list > $SCRIPT_FIFO &
+while read index_key
+do
+    gitpath=$(echo $index_key|sed "s#=#/#g")
+    gitroot=$(hash_get code_dir_list "$index_key")
+    pushd $gitroot > /dev/null 2>&1
+    gitrev=$(git show-ref origin/master -s --abbrev=40|head -n1 2> /dev/null)
+    giturl=$(git remote -v|grep "^\<origin\>.*(fetch)"|sed "s/origin[ \t]*\(.*\)[ \t]*(fetch)$/\1/g")
+    popd > /dev/null 2>&1
+    echo "models/$gitpath" $gitrev >> ${CASEROOT}/config/common/reproducibility/repository_version_info
+    write_flag="true"
+    gitpath=$(trim "$gitpath")
+    gitrev=$(trim "$gitrev")
+    giturl=$(trim "$giturl")
+    while read log_time log_gitpath log_gitrev log_giturl
+    do
+        if [ "$log_gitpath" != "models/$gitpath" ]; then
+            continue
+        elif [ "$log_gitrev" = "$gitrev" -a "$log_giturl" = "$giturl" ]; then
+            write_flag="false"
+            break
+        else
+            break
+        fi
+    done  < "${CASEROOT}/config/common/reproducibility/repository_version_log"
+    if [ "$write_flag" = "true" ]; then
+        echo "${configuration_time}" "models/$gitpath" "$gitrev" "$giturl" >> ${CASEROOT}/config/common/reproducibility/repository_version_log.new
+    fi
+done < "$SCRIPT_FIFO"
+
+#Make code patch
+rm -rf "$CASEROOT/patches" 2> /dev/null 
+
+invalidroot=`grep -v "$CODEROOT/" ${CASEROOT}/config/common/reproducibility/code_dir_list`
+if [ -z "$invalidroot" ]; then
+    tmppath=`pwd`
+    codepath=`sort -u ${CASEROOT}/config/common/reproducibility/code_dir_list | sed "s#$CODEROOT/##" | awk -F / '{print $1"/"$2}' | sort -u`
+
+    for path in $codepath
+    do
+        path="$CODEROOT/$path"
+        cd $path
+        model_name=`basename $path`
+        model_type=`dirname $path`
+        model_type=`basename ${model_type}`
+        mkdir -p "$CASEROOT/patches/models/${model_type}/${model_name}"
+        patchfile="$CASEROOT/patches/models/${model_type}/${model_name}/patches.txt"
+        rm ${patchfile} 2> /dev/null
+
+        git_path="$model_type=$model_name"
+        if hash_exists code_dir_list "$git_path"; then
+            git diff origin/master -a > ${patchfile}
+            patch_temp=$(mktemp -d)
+            git ls-files --others --exclude-standard | while read -r i
+            do 
+                dir_name=$(dirname $i)
+                mkdir -p "$patch_temp/$dir_name"
+                cp -r "$i" "$patch_temp/$dir_name/"
+            done
+            pushd "$patch_temp" > /dev/null 2>&1
+            rm "$CASEROOT/patches/models/${model_type}/${model_name}/patches.tar" 2> /dev/null
+            tar cf "$CASEROOT/patches/models/${model_type}/${model_name}/patches.tar" "./"
+            popd > /dev/null 2>&1
+            rm -rf "$patch_temp"
+        else
+            #cd ..
+            #rm -rf .temp 2> /dev/null
+            #mkdir .temp
+            #diff -Nur .temp ${model_name} > ${patchfile}
+            #rm -rf .temp
+            rm "$CASEROOT/patches/models/${model_type}/${model_name}/patches.tar" 2> /dev/null
+            tar cf "$CASEROOT/patches/models/${model_type}/${model_name}/patches.tar" "./"
+        fi
+    done
+    cd $tmppath
+else
+    report_logs "ERROR" "Invalid root in \"${CASEROOT}/config/common/reproducibility/code_dir_list\"\nThis should be bug of the C-Coupler platform. Please contact the C-Coupler team."
+    error_exit
+fi
+
+for path in scripts config
+do
+    mkdir -p "$CASEROOT/patches/$path"
+    patchfile="$CASEROOT/patches/$path/patches.txt"
+	rm ${patchfile} 2> /dev/null
+    cd "$CODEROOT/../$path"
+
+    is_in_git=$(git rev-parse --is-inside-work-tree >/dev/null 2>&1 && echo "1")
+    PLATFORMROOT=$(dirname "$CODEROOT")
+    if [ ! -z "$is_in_git" ]; then
+        gitroot=$(git rev-parse --show-toplevel 2>/dev/null)
+        git status > /dev/null 2>&1
+
+        if [ "$?" != "0" ]; then
+            is_in_git=""
+        fi
+
+        if [ "$gitroot" != "$PLATFORMROOT/$path" ]; then
+            is_in_git=""
+        fi
+    fi
+
+    if [ ! -z "$is_in_git" ]; then
+        git diff origin/master -a  . > ${patchfile}
+        rm $CASEROOT/patches/${path}/patches.tar > /dev/null 2>&1 
+        patch_temp=$(mktemp -d)
+        git ls-files --others --exclude-standard | while read -r i
+    do 
+        dir_name=$(dirname $i)
+        mkdir -p "$patch_temp/$dir_name"
+        cp "$i" "$patch_temp/$dir_name/"
+    done
+    pushd "$patch_temp" > /dev/null 2>&1
+    tar cf "$CASEROOT/patches/${path}/patches.tar" "./"
+    popd > /dev/null 2>&1
+    rm -rf "$patch_temp"
+    gitrev=$(git show-ref origin/master -s --abbrev=40|head -n1 2> /dev/null)
+    giturl=$(git remote -v|grep "^\<origin\>.*(fetch)"|sed "s/origin[ \t]*\(.*\)[ \t]*(fetch)$/\1/g")
+    echo "$path" $gitrev >> ${CASEROOT}/config/common/reproducibility/repository_version_info
+    write_flag="true"
+    gitpath=$(trim "$path")
+    gitrev=$(trim "$gitrev")
+    giturl=$(trim "$giturl")
+    while read log_time log_gitpath log_gitrev log_giturl
+    do
+        if [ "$log_gitpath" != "$path" ]; then
+            continue
+        elif [ "$log_gitrev" = "$gitrev" -a "$log_giturl" = "$giturl" ]; then
+            write_flag="false"
+            break
+        else
+            break
+        fi
+    done < ${CASEROOT}/config/common/reproducibility/repository_version_log
+    if [ "$write_flag" = "true" ]; then
+        echo "${configuration_time}" "$path" $gitrev $giturl >> ${CASEROOT}/config/common/reproducibility/repository_version_log.new
+    fi
+else
+    #cd ..
+    #rm -rf .temp 2> /dev/null
+    #mkdir .temp
+    #diff -Nur .temp $path > ${patchfile}
+    #rm -rf .temp
+    rm $CASEROOT/patches/${path}/patches.tar > /dev/null 2>&1 
+    tar cf "$CASEROOT/patches/${path}/patches.tar" "./"
+fi
+done
+
+cat ${CASEROOT}/config/common/reproducibility/repository_version_log >> ${CASEROOT}/config/common/reproducibility/repository_version_log.new
+mv "${CASEROOT}/config/common/reproducibility/repository_version_log.new" "${CASEROOT}/config/common/reproducibility/repository_version_log"
+
+if [ "$CHECK_SUM" = "true" ]; then
+    archive_filename="${CASEROOT##*/}.config.$configuration_time.checksum.tar"
+else
+    archive_filename="${CASEROOT##*/}.config.$configuration_time.nochecksum.tar"
+fi
+
+echo -n "  Archiving this configuration into $archive_filename ... "
+pushd "$CASEROOT" > /dev/null
+rm -f $CASEROOT/config/common/reproducibility/configure.log*
+cp $CONFIG_LOG_FILE $CASEROOT/config/common/reproducibility/ 
+cp ${SCRIPTSROOT}/utils/checkout_experiment_system $CASEROOT/config/common/reproducibility/
+tar cf "$CASEROOT/configure_history/experiment_setups/$archive_filename" "config" "configure" "runcase" "compile" "clean" "patches"
+echo " done"
+popd > /dev/null
+
+rm -rf "$CASEROOT/config/.backup_compiler"
+mkdir -p "$CASEROOT/config/.backup_compiler/common"
+backup_compiler "${CASEROOT}/config/common" "$CASEROOT/config/.backup_compiler/common"
+
+for(( i=0; i<${#libs_name[*]}; i++))
+do
+	mkdir -p "$CASEROOT/config/.backup_compiler/lib/${libs_name[i]}"
+	backup_compiler "${CASEROOT}/config/lib/${libs_name[i]}" "$CASEROOT/config/.backup_compiler/lib/${libs_name[i]}"
+done
+
+for(( i=0; i<${#models_name[*]}; i++))
+do
+	mkdir -p "$CASEROOT/config/.backup_compiler/${models_type[i]}/${models_name[i]}"
+	backup_compiler "${CASEROOT}/config/${models_type[i]}/${models_name[i]}" "$CASEROOT/config/.backup_compiler/${models_type[i]}/${models_name[i]}"
+done
+
+if grep ERROR $CONFIG_LOG_FILE > /dev/null 2>&1; then
+    report_logs "NOTICE" "Please read the log file $CONFIG_LOG_FILE of this configurartion. There are some errors detected. "
+fi
+
+if grep WARNING $CONFIG_LOG_FILE > /dev/null 2>&1; then
+    report_logs "NOTICE" "Please read the log file $CONFIG_LOG_FILE of this configurartion. There are some warnings reported. We highly advise to fix these warnings."
+fi
+
+echo  $archive_filename >> ${CASEROOT}/config/common/reproducibility/simulation_package_history.log
+
+#generate env_run.xml
+case_name="$(hash_get common_param original_case_name)"
+run_type="$(hash_get common_param run_type)"
+leap_year_original="$(hash_get common_param leap_year)"
+if [ "$leap_year_original" == "false" ]; then
+    leap_year="off"
+else
+    leap_year="on"
+fi
+
+start_date="$(hash_get common_param run_start_date)"
+start_second="$(hash_get common_param run_start_second)"
+rest_freq_unit="$(hash_get common_param rest_freq_unit)"
+rest_freq_count="$(hash_get common_param rest_freq_count)"
+stop_date="$(hash_get common_param run_stop_date)"
+stop_second="$(hash_get common_param run_stop_second)"
+cat > /tmp/env_run.xml << END
+#!/bin/bash
+export CASE_NAME="$case_name"
+export RUN_TYPE="$run_type"
+export LEAP_YEAR="$leap_year"
+export START_DATE="$start_date"
+export START_SECOND="$start_second"
+export REST_FREQ_UNIT="$rest_freq_unit"
+export REST_FREQ_COUNT="$rest_freq_count"
+export STOP_DATE="$stop_date"
+export STOP_SECOND="$stop_second"
+END
+
+if [ -x "${CASEROOT}/config/lib/c_coupler/config.sh" ]; then
+    runconf "${CASEROOT}/config/lib/c_coupler/config.sh" "/tmp/env_run.xml"
+fi
+rm /tmp/env_run.xml
+
+cleanup

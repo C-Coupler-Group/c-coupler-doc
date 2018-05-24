@@ -1,0 +1,56 @@
+# $Id: base_variables,v 1.1.2.1 2004/05/11 20:02:03 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+AR		   = ar
+AR_FLAGS	   = cr
+RM		   = rm -f
+OMAKE		   = ${MAKE}
+RANLIB		   = ranlib
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+SH_LD		   = icc
+# ######################### C and Fortran compiler ########################
+#
+C_CC		   = icc 
+C_FC		   = ifort 
+C_FC_MOD           = -I
+C_CLINKER_SLFLAG   = -Wl,-rpath,
+C_FLINKER_SLFLAG   = -Wl,-rpath,
+C_CLINKER	   = ${C_CC}
+C_FLINKER	   = ${C_FC}
+C_CCV		   = ${C_CC} -V -c -w -x c
+C_FCV              = ${C_FC} -V -c -w
+C_SYS_LIB	   = -ldl -lc -lg2c -lm
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = -g 
+G_FOPTFLAGS	   = -g
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = -O 
+O_FOPTFLAGS	   = -O
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = ${C_CC}
+CXX_FC		   = ${C_FC} -mp
+CXX_CLINKER_SLFLAG = -Wl,-rpath,
+CXX_FLINKER_SLFLAG = -Wl,-rpath,
+CXX_CLINKER	   = ${C_CC}
+CXX_FLINKER	   = ${C_CC}
+CXX_CCV		   = ${CXX_CC} -V -c -w -x c++
+CXX_SYS_LIB	   = -ldl -lc -lg2c -lm
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = -g 
+GCXX_FOPTFLAGS	   = -g
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   = -O 
+OCXX_FOPTFLAGS	   = -O
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = -g
+GCOMP_FOPTFLAGS	   = -g
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   = -O
+OCOMP_FOPTFLAGS	   = -O
+
+PARCH		   = linux_intel
+
+include ${ESMF_DIR}/build/common_variables

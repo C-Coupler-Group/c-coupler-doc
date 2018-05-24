@@ -1,0 +1,16 @@
+#! /bin/csh -f
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Li Liu on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+
+
+link_data "$DATAROOT/grids/R05_Grid.nc" "$RUN_ALL_DIR/grids"
+link_data "$DATAROOT/cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc" "$RUN_ALL_DIR/remap_weights_files/remap_weights_files_by_SCRIP/"
+link_data "$DATAROOT/cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_gamil128x60_to_licomeq1x1_bilin_091022.nc" "$RUN_ALL_DIR/remap_weights_files/remap_weights_files_by_SCRIP/"
+link_data "$DATAROOT/cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_gamil128x60_to_licomeq1x1_aave_091022.nc" "$RUN_ALL_DIR/remap_weights_files/remap_weights_files_by_SCRIP/"
+link_data "$DATAROOT/cpl/remap_weights_files/remap_weights_files_by_SCRIP/map_r05_to_eq1x1_aave_090105.nc" "$RUN_ALL_DIR/remap_weights_files/remap_weights_files_by_SCRIP/"
+

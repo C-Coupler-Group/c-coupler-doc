@@ -1,0 +1,65 @@
+# $Id: base_variables,v 1.1.2.2 2003/12/02 22:35:53 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+LD		   = ld
+AR		   = ar
+AR_FLAGS	   = -cr
+RM		   = rm -f
+RANLIB		   = false
+OMAKE		   = ${MAKE}
+SHELL		   = sh
+SED		   = sed
+# ######################### C and Fortran compiler ########################
+#
+C_CC		   = cc -h list=m
+C_FC		   = ftn -F -rm -em -s real64 -dp -dy
+C_FC_MOD           = -I
+C_CLINKER_SLFLAG   = 
+C_FLINKER_SLFLAG   = 
+C_CLINKER	   = cc
+C_FLINKER	   = ftn -em -s real64 -dp
+C_CCV		   = cc -V
+C_FCV              = ftn -V
+C_SYS_LIB	   = 
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = -Gp
+G_FOPTFLAGS	   = -G1
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = 
+O_FOPTFLAGS	   = -Omodinline,gen_private_callee,task0
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = CC -h list=m
+CXX_FC		   = ftn -F -rm -em -s real64 -dp -dy
+CXX_CLINKER_SLFLAG = 
+CXX_FLINKER_SLFLAG = 
+CXX_CLINKER	   = CC
+CXX_FLINKER	   = ftn -em -s real64 -dp
+CXX_CCV		   = CC -V
+CXX_SYS_LIB	   = 
+
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = -Gp
+GCXX_FOPTFLAGS	   = -G1
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   =  
+OCXX_FOPTFLAGS	   = -Omodinline,gen_private_callee,task0
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = -Gp
+GCOMP_FOPTFLAGS	   = -G1
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   =  
+OCOMP_FOPTFLAGS	   = -Omodinline,gen_private_callee,task0
+# ########################### Alice install options ###########################
+#
+
+##################################################################################
+#
+#   Alice installers should very rarely ever need to edit anything below this 
+#
+##################################################################################
+
+PARCH		   = cray_x1
+
+include ${ESMF_DIR}/build/common_variables

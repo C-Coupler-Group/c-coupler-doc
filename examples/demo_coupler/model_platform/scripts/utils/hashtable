@@ -1,0 +1,61 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+HASH__MYPATH=$(readlink -f "$0")
+HASH__MYPATH=$(dirname "$HASH__MYPATH")
+
+if [ -d /dev/shm -a -w /dev/shm ]; then
+	HASH__DIRECTORY="/dev/shm"
+elif [ -d /tmp -a -w /tmp ]; then
+	HASH__DIRECTORY="/tmp"
+elif [ -d "$HASH__MYPATH" -a -w "$HASH__MYPATH" ]; then
+	HASH__DIRECTORY="$HASH__MYPATH"
+else
+	echo "No writable directories for hashtable, abort."
+	exit 1
+fi
+
+hash_init() {
+	rm -rf $HASH__DIRECTORY/$$.hashmap
+	mkdir -p $HASH__DIRECTORY/$$.hashmap
+}
+
+hash_exists() {
+	mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+	if [ -f $HASH__DIRECTORY/$$.hashmap/$1/$2 ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+hash_put() {
+	mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+	printf -- "$3" > $HASH__DIRECTORY/$$.hashmap/$1/$2
+}
+
+hash_get() {
+	mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+	if hash_exists $1 $2; then
+		cat $HASH__DIRECTORY/$$.hashmap/$1/$2
+	fi
+}
+
+hash_keys() {
+	mkdir -p $HASH__DIRECTORY/$$.hashmap/$1
+	ls -1 $HASH__DIRECTORY/$$.hashmap/$1
+}
+
+hash_clear() {
+	rm -rf $HASH__DIRECTORY/$$.hashmap/$1
+}
+
+hash_destroy() {
+	rm -rf $HASH__DIRECTORY/$$.hashmap
+}

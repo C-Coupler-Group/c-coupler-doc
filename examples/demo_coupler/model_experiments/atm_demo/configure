@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# == Get the path of this script ==
+MYPATH=$(readlink -f "$0")
+MYPATH=$(dirname "$MYPATH")
+# =================================
+
+export CASEROOT="${MYPATH}"
+
+if [ ! -e "${SCRIPTSROOT}" ]; then
+    echo 
+    echo "[ERROR]: Cannot find the SCRIPTSROOT: \"${SCRIPTSROOT}\""
+    echo "Please set the SCRIPTSROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    echo 
+    exit 1
+fi
+
+if [ ! -f "${SCRIPTSROOT}/utils/configure_system" ]; then
+    echo 
+    echo "[ERROR]: ${SCRIPTSROOT}/utils/configure_system does not exist. "
+    echo "Please check the environment variable SCRIPTSROOT (it is set through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform)"
+    echo 
+    exit 1
+fi
+
+"${SCRIPTSROOT}/utils/configure_system" "$@"

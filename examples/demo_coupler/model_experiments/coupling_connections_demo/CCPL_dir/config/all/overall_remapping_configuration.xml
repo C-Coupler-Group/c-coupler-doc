@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<root>
+    <remapping_setting  status="on">
+       <remapping_algorithms status="on">
+           <H2D_algorithm  name="bilinear" status="on">
+               <parameter name="enable_extrapolate" value="false" />
+           </H2D_algorithm>
+           <V1D_algorithm  name="linear" status="on">
+               <parameter name="enable_extrapolate" value="false" />
+           </V1D_algorithm>
+       </remapping_algorithms>
+       <fields  status="on" specification="type">
+          <entry value="state" />
+       </fields>
+   </remapping_setting>
+   <remapping_setting  status="on">
+       <remapping_algorithms status="on">
+           <H2D_algorithm  name="conserv_2D" status="on">
+           </H2D_algorithm>
+           <V1D_algorithm  name="linear" status="on">
+               <parameter name="enable_extrapolate" value="true" />
+           </V1D_algorithm>
+       </remapping_algorithms>
+       <fields  status="on" specification="type">
+          <entry value="flux" />
+       </fields>
+   </remapping_setting>
+</root>

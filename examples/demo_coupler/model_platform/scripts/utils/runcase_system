@@ -1,0 +1,393 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+function trim
+{
+    echo "$1" | grep -o "[^ ]\+\( \+[^ ]\+\)*"
+}
+
+function usage
+{
+    echo "usage runcase [-stop_run proc_id] [-stop_member num1,num2-num3,num4...] [-resubmit] [-parallel_submit] [-ensemble_member num1,num2-num3,num4...]"
+    echo "-stop_run can stop the resubmitting process whose id is proc_id"
+    echo "-stop_member can stop the ensemble member which is being resubmitted"
+    echo "-resubmit can resubmit the jobs automaticlly"
+	echo "-ensmble_member is enbled only when ensemble is uesed" 
+	echo "num1,num2,num3,num4 are positive numbers and num2<=num3"
+}
+
+#get the path of this script
+export PATH=$PATH:$SCRIPTSROOT/utils/
+source "${CASEROOT}/config/common/run.conf"
+source "${CASEROOT}/config/common/env"
+source "$SCRIPTSROOT/utils/check_ensemble"
+source "$SCRIPTSROOT/utils/check_ensemble_member"
+
+TEMP=$(getopt -a -o h -l resubmit,parallel_submit,ensemble_member:,stop_run:,stop_member:,help -n runcase -- "$@")
+if [ $? -ne 0 ]; then
+    usage
+    exit 1
+fi
+eval set --$TEMP
+
+parallel_submit="no"
+resubmit="no"
+stop_submit="no"
+
+while true; do
+    case "$1" in
+        --stop_run) stop_submit="yes"; stop_process="$2"; shift 2;;
+        --stop_member) stop_member="$2"; shift 2;;
+        --resubmit) resubmit="yes"; parallel_submit="yes"; shift 1;;
+        --parallel_submit) parallel_submit="yes"; shift 1;;
+        --ensemble_member) ensemble_member="$2"; shift 2;;
+        --) shift 1; break;;
+        -h | --help)
+        usage
+        exit 0;;
+        *) report_logs "ERROR" "Internal error of the C-Coupler platform is detected. Please contact the C-Coupler team!"; exit 1 ;;
+    esac
+done
+
+if [ $# -gt 0 ]; then
+	report_logs "ERROR" "There is the redundant parameter: $@"
+	exit 1
+fi
+
+if [ "$stop_submit" = "yes" ] ; then
+    kill_shell="${CASEROOT}/config/common/machine/${MACH}/kill.job"
+    if [ ! -f "$kill_shell" ]; then
+        report_logs "ERROR" "The machine <$MACH> does not support the parameter stop_run."
+        exit 1
+    fi
+    kill "$stop_process" 2> /dev/null
+    if [ "$?" != "0" ]; then
+        report_logs "ERROR" "No such process $stop_process"
+        exit 1
+    fi
+    if [ -f "${CASEROOT}/job_logs/resubmit_jobs.$stop_process" ]; then
+        while read line; do
+            job_id=`echo "$line" | awk '{print $3}'`
+            "$kill_shell" "$job_id"
+        done < "${CASEROOT}/job_logs/resubmit_jobs.$stop_process"
+        rm "${CASEROOT}/job_logs/resubmit_jobs.$stop_process"
+    else
+        report_log "WARNING" "The log file of this resubmittion is not found: ${CASEROOT}/job_logs/resubmit_jobs.$stop_proces"
+    fi
+    exit 0
+fi
+
+resubmit_shell="${CASEROOT}/config/common/machine/${MACH}/resubmit.jobs"
+if [ ! -f "$resubmit_shell" -a "$resubmit" = "yes" ]; then
+    report_logs "ERROR" "The machine <$MACH> does not support the parameter resubmit."
+    exit -1
+fi
+
+while read line; do
+    key=`trim "${line%\=*}"`
+    value=`trim "${line#$key*=}"`
+    case "$key" in
+        model_list)
+        models_conf="$value"
+        ;;
+        submit_script)
+        submit_shell="$value"
+        ;;
+        machine_env)
+        machine_env="$value"
+        ;;
+        ensemble_num)
+        ensemble_num="$value"
+        ;;
+        *)
+        ;;
+    esac
+done < "${CASEROOT}/config/common/run.conf"
+
+if [ ! -z "$stop_member" ]; then
+    kill_shell="${CASEROOT}/config/common/machine/${MACH}/kill.job"
+    if [ ! -f "$kill_shell" ]; then
+        report_logs "ERROR" "The machine <$MACH> does not support the parameter stop_run."
+        exit 1
+    fi
+
+	list=$(check_ensemble_member "$ensemble_num" "$stop_member")
+
+	if [ $? -ne 0 ]; then
+		usage
+		exit 1
+	else
+		IFS_BAK=$IFS
+		IFS=" "
+		bitmap=($list)
+		IFS=$IFS_BAK
+	fi
+    exist_files=`ls $CASEROOT/job_logs/resubmit_jobs.* 2> /dev/null`
+    fix=$(echo -n "${ensemble_num}" | wc | awk '{print $3}')
+    for (( ensemble_idx=1; ensemble_idx<=ensemble_num; ensemble_idx++ ))
+    do
+    	if [ ${bitmap[ensemble_idx]} -ne 0 ]; then
+            index=$(printf "%0${fix}d" "$ensemble_idx")
+            CASENAME=${CASEROOT##*/}
+            CASENAME="${CASENAME}_ensemble_${index}"
+            for file in $exist_files
+            do
+                grep "^$ensemble_idx $CASENAME\>" "$file" > /dev/null
+                if [ "$?" = "0" ]; then
+                    job_id=`grep "^$ensemble_idx $CASENAME\>" "$file" | awk '{print $3}'`
+                    sed -i "/^$ensemble_idx $CASENAME\> /d" "$file"
+                    "$kill_shell" "$job_id"
+                fi
+            done
+        fi
+    done
+    exit 0
+fi
+
+declare -a models
+declare -a models_type
+declare -a models_exe
+declare -a models_num_total_proc
+declare -a models_num_thread
+
+i=0
+
+while read models[i]
+do
+    read tmp
+    while read line
+    do
+        if [ "$line" = "}" ]
+        then
+            break
+        fi
+        key=`trim "${line%\=*}"`
+        value=`trim "${line#$key*=}"`
+        case "$key" in
+            type)
+            models_type[i]="$value"
+            ;;
+            exefile)
+            models_exe[i]="$value"
+            ;;
+            num_total_proc)
+            models_num_total_proc[i]="$value"
+            ;;
+            num_thread)
+            models_num_thread[i]="$value"
+            ;;
+            *)
+            ;;
+        esac
+    done
+    let i=i+1
+done < "$models_conf"
+
+num_models=$i
+
+if [ ! -f "$machine_env" ]; then
+    report_logs "ERROR" "The environment variable file \"$machine_env\" that is about the machine \"$MACH\" does not exist. \nPlease check."
+    exit 1
+fi
+
+if [ ! -f "$submit_shell" ]; then
+    report_logs "ERROR" "The environment variable file \"$submit_shell\" that is about how to submit a job to the machine \"$MACH\" does not exist.\nPlease check."
+    exit 1
+fi
+
+if [ ! -z "$ensemble_member" ]; then
+	list=$(check_ensemble_member "$ensemble_num" "$ensemble_member")
+
+	if [ $? -ne 0 ]; then
+		usage
+		exit 1
+	else
+		IFS_BAK=$IFS
+		IFS=" "
+		bitmap=($list)
+		IFS=$IFS_BAK
+	fi
+else
+    declare -a bitmap
+    for (( ensemble_idx=1; ensemble_idx<=ensemble_num; ensemble_idx++ ))
+    do
+        bitmap[ensemble_idx]=1
+    done
+fi
+
+if [ "$resubmit" = "yes" ]; then
+    log_dir="${CASEROOT}/job_logs"
+    mkdir -p $log_dir
+    pushd $log_dir > /dev/null
+    exist_files=`ls resubmit_jobs.* 2> /dev/null`
+    if [ $ensemble_num -lt 1 ]; then
+        for file in $exist_files
+        do
+            CASENAME=${CASEROOT##*/}
+            grep "^0 $CASENAME\>" "$file" > /dev/null 2>&1
+            if [ "$?" = "0" ]; then
+                report_logs "WARNING" "This case is being resubmited." 
+                resubmit="no"
+            fi
+        done
+    else
+        fix=$(echo -n "${ensemble_num}" | wc | awk '{print $3}')
+        for (( ensemble_idx=1; ensemble_idx<=ensemble_num; ensemble_idx++ ))
+        do
+    		if [ ${bitmap[ensemble_idx]} -ne 0 ]; then
+                index=$(printf "%0${fix}d" "$ensemble_idx")
+                CASENAME=${CASEROOT##*/}
+                CASENAME="${CASENAME}_ensemble_${index}"
+                for file in $exist_files
+                do
+                    grep "^$ensemble_idx $CASENAME\>" "$file" > /dev/null
+                    if [ "$?" = "0" ]; then
+                        report_logs "WARNING" "This ensemble $ensemble_idx is being resubmited."
+                        bitmap[ensemble_idx]=0
+                        break
+                    fi
+                done
+            fi
+        done
+        resubmit="no"
+        for (( ensemble_idx=1; ensemble_idx<=ensemble_num; ensemble_idx++ ))
+        do
+    		if [ ${bitmap[ensemble_idx]} -ne 0 ]; then
+                resubmit="yes"
+                break
+            fi
+        done
+    fi
+    popd > /dev/null
+
+    if [ "$resubmit" = "yes" ]; then
+        report_logs "NOTICE" "The runcase shell is background executing. Its process id is $$"
+    else
+        report_logs "WARNING" "No jobs is resubmited this time."
+        exit 0
+    fi
+fi
+
+shell_id="$$"
+resubmit_file="${CASEROOT}/job_logs/resubmit_jobs.${shell_id}"
+if [ -e "$resubmit_file" ]; then
+    rm "${resubmit_file}"
+fi
+touch "${resubmit_file}"
+
+#submit
+if [ $ensemble_num -lt 1 ]; then
+    
+    param="$submit_shell"
+    for (( i = 0; i < num_models; i++ ))
+    do
+        param="$param \"${models_exe[i]}\" \"${CASEROOT}/run/all/${models[i]}.nml\" ${models_num_total_proc[i]} ${models_num_thread[i]}"
+    done
+
+    source "$machine_env"
+    export log_dir="${CASEROOT}/job_logs"
+    export CASENAME=${CASEROOT##*/}
+    export configuration_time=${configuration_time}
+    mkdir -p $log_dir
+
+    next_run="true"
+    while [ "$next_run" = "true" ]
+    do
+        sed -i "/^0 $CASENAME\>/d" "$resubmit_file"
+        job_id=`eval "$param"`
+        num_line=`echo "$job_id" | wc -l`
+        let num_line=num_line-1
+        echo "$job_id" | head -n $num_line
+        job_id=`echo "$job_id"|tail -n 1`
+        echo "0 $CASENAME $job_id $log_dir" >> "$resubmit_file"
+
+        next_run="false"
+        if [ "$resubmit" = "yes" ]; then
+            sleep 60
+            jobs_list=`"${resubmit_shell}" "$resubmit_file"`
+            while [ "$jobs_list" = "-1" ]
+            do
+                sleep 60
+                jobs_list=`"${resubmit_shell}" "$resubmit_file"`
+            done
+            if [ "$jobs_list" != "" ]; then
+                next_run="true"
+            fi
+        fi
+    done
+else
+    param="$submit_shell"
+    if ! check_ensemble_run_directory "$ensemble_num"; then
+        report_logs "ERROR" "The directory run already exists and the ensemble member number under the directory run is inconsistent with the variable \"ensemble_number\" in the \"config/common/case.conf\" (when \"ensemble_number\" is not set, the ensemble member number is 0)\nPlease verify: modify \"config/common/case.conf\", or remove the directory run, or duplicate the current simulation to a new simulation, and then reconfigure and recompile the simulation."
+        exit 1
+    fi
+
+    fix=$(echo -n "${ensemble_num}" | wc | awk '{print $3}')
+    next_run="true"
+    while [ "$next_run" = "true" ]
+    do
+        for (( ensemble_idx=1; ensemble_idx<=ensemble_num; ensemble_idx++ ))
+        do
+    		if [ ${bitmap[ensemble_idx]} -eq 0 ]; then
+    			continue
+    		fi
+   
+            index=$(printf "%0${fix}d" "$ensemble_idx")
+            RUNROOT="${CASEROOT}/run/ensemble_${index}"
+            param="$submit_shell"
+            for (( i = 0; i < num_models; i++ ))
+            do
+                param="$param \"${RUNROOT}/${models_type[i]}/${models[i]}/exe/${models[i]}\" \"${RUNROOT}/all/${models[i]}.nml\" ${models_num_total_proc[i]} ${models_num_thread[i]}"
+            done
+    
+            source "$machine_env"
+            export log_dir="${CASEROOT}/job_logs/ensemble_${index}"
+            export CASENAME=${CASEROOT##*/}
+            export CASENAME="${CASENAME}_ensemble_${index}"
+            export configuration_time="${configuration_time}"
+            mkdir -p $log_dir
+            if [ "$parallel_submit" = "yes" ]; then
+                sed -i "/^$ensemble_idx $CASENAME\>/d" "$resubmit_file"
+                job_id=`eval "$param &"`
+                num_line=`echo "$job_id" | wc -l`
+                let num_line=num_line-1
+                echo "$job_id" | head -n $num_line
+                job_id=`echo "$job_id"|tail -n 1`
+                echo "$ensemble_idx $CASENAME $job_id $log_dir" >> "$resubmit_file"
+            else
+                sed -i "/^$ensemble_idx $CASENAME\>/d" "$resubmit_file"
+                job_id=`eval "$param"`
+                num_line=`echo "$job_id" | wc -l`
+                let num_line=num_line-1
+                echo "$job_id" | head -n $num_line
+                job_id=`echo "$job_id"|tail -n 1`
+                echo "$ensemble_idx $CASENAME $job_id $log_dir" >> "$resubmit_file"
+            fi
+            bitmap[ensemble_idx]=0
+        done
+
+        next_run="false"
+        if [ "$resubmit" = "yes" ]; then
+            sleep 60
+            jobs_list=`"${resubmit_shell}" "$resubmit_file"`
+            while [ "$jobs_list" = "-1" ]
+            do
+                sleep 60
+                jobs_list=`"${resubmit_shell}" "$resubmit_file"`
+            done
+            for tmp_job in ${jobs_list}
+            do
+                bitmap[tmp_job]=1
+                next_run="true"
+            done
+        fi
+    done
+fi
+
+rm "$resubmit_file"

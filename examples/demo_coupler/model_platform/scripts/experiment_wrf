@@ -1,0 +1,3 @@
+COMPSET=wrf
+CASEROOT="/home/sunchao/work3/c-coupler2_platform/model_experiments/wrf"
+MACH=generic_linux

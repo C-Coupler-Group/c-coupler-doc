@@ -1,0 +1,41 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+# Note:
+# Paramters:
+#     1. Number of ensembles
+#
+# $CASEROOT is needed
+
+check_ensemble_run_directory()
+{
+    if [ ! -d "${CASEROOT}/run" ]; then
+        return 0
+    fi
+    if [ -z "$(ls -A ${CASEROOT}/run)" ]; then
+        return 0
+    fi
+    local total_dir=$(ls "${CASEROOT}/run" -A -1|grep "^ensemble_"|wc|awk '{print $1}')
+    if [ $total_dir != $1 ]; then
+        return 1
+    fi
+    if [ $total_dir -eq 0 ]; then
+        return 0
+    fi
+    local i=0
+    local fix=$(echo -n "$1"|wc|awk '{print $3}')
+
+    for (( i = 1; i <= $1; i++ )); do
+        local formated_id=$(printf "%0${fix}d" $i)
+        if [ ! -d "${CASEROOT}/run/ensemble_$formated_id" ]; then
+            return 1
+        fi
+    done
+    return 0
+}

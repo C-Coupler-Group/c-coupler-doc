@@ -1,0 +1,287 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code was initially finished by Dr. Cheng Zhang on 2014/12/30. 
+#  If you have any problem, please contact:
+#  Dr. Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+function usage
+{
+    echo "usage: compare_experiment_package [-output dir]  <config archive 1> <config archive 2>"
+}
+
+# == Get the path of this script ==
+MYPATH=$(readlink -f "$0")
+MYPATH=$(dirname "$MYPATH")
+# =================================
+export LC_ALL="POSIX"
+
+TEMP=$(getopt -a -o h -l output:,help -n configure -- "$@")
+eval set -- $TEMP
+
+DIFFDIR=""
+while true; do
+	case "$1" in
+		--output) DIFFDIR="$2"; shift 2 ;;
+		--) shift; break ;;
+		-h|--help) 
+		usage
+		exit 0;;
+		*) echo "[ERROR]: An internal error of the C-Coupler platform is detected. Please contact the C-Coupler team."; exit 1 ;;
+	esac
+done
+
+if (( $# < 2 )); then
+    usage
+    exit 0
+fi
+
+if [ ! -f "$1" ]; then
+    echo "[ERROR]: The first simulation setting package \"$1\" does not exists. Please check."
+    exit 1
+fi
+
+if [ ! -f "$2" ]; then
+    echo "[ERROR]: The second simulation setting package \"$2\" does not exists. Please check."
+    exit 1
+fi
+
+if [ -z "$DIFFDIR" ]; then
+	FILE1=$(basename $1 | sed "s#\.tar\$##")
+	FILE2=$(basename $2 | sed "s#\.tar\$##")
+	DIFFDIR="differ_${FILE1}____and____${FILE2}"
+fi
+
+if [ ! -e "$DIFFDIR" ]; then
+	mkdir "${DIFFDIR}" 2> /dev/null
+elif [ ! -d "$DIFFDIR" ]; then
+	echo "[Error]: \"$DIFFDIR\", which is specified to store the output differences, exists but is not a directory. Please check."
+	usage
+	exit 1
+fi
+
+TMPDIR1=$(mktemp -d)
+TMPDIR2=$(mktemp -d)
+
+ENV1="$TMPDIR1/local_env"
+echo "PLATFORMROOT=\"$TMPDIR1/c-coupler_platform\"" >> "$ENV1"
+
+mkdir "$TMPDIR1/working_dir"
+tar xf "$1" -C "$TMPDIR1/working_dir"
+if [ $? -ne 0 ]; then
+    echo "[ERROR]: \"$1\" is not a tar file. It may not be a simulation setting package. Please check."
+    rm -rf "$TMPDIR1"
+    exit 1
+fi
+
+ENV2="$TMPDIR2/local_env"
+echo "PLATFORMROOT=\"$TMPDIR2/c-coupler_platform\"" >> "$ENV2"
+
+mkdir "$TMPDIR2/working_dir"
+tar xf "$2" -C "$TMPDIR2/working_dir"
+if [ $? -ne 0 ]; then
+    echo "[ERROR]: \"$2\" is not a tar file. It may not be a simulation setting package. Please check."
+    rm -rf "$TMPDIR1"
+    rm -rf "$TMPDIR2"
+    exit 1
+fi
+
+if [ ! -f "$TMPDIR1/working_dir/config/common/reproducibility/checkout_experiment_system" ]; then
+    echo "[ERROR]: Script checkout_experiment_system does not exist in the simulation setting package \"$1\". Please check."
+    rm -rf "$TMPDIR1"
+    rm -rf "$TMPDIR2"
+    exit 1
+fi
+
+if [ ! -f "$TMPDIR2/working_dir/config/common/reproducibility/checkout_experiment_system" ]; then
+    echo "[ERROR]: Script checkout_experiment_system does not exist in the simulation setting package \"$2\". Please check."
+    rm -rf "$TMPDIR1"
+    rm -rf "$TMPDIR2"
+    exit 1
+fi
+
+$TMPDIR1/working_dir/config/common/reproducibility/checkout_experiment_system  -bypass_inputdata $1 "$TMPDIR1/local_env"
+$TMPDIR2/working_dir/config/common/reproducibility/checkout_experiment_system  -bypass_inputdata $2 "$TMPDIR2/local_env"
+
+rm -rf "$TMPDIR1/working_dir/patches"
+rm -rf "$TMPDIR2/working_dir/patches"
+
+gitlist=$(mktemp)
+find "$TMPDIR1" -name "\.git" > "$gitlist"
+while read tmp_git
+do
+	rm -rf "$tmp_git"
+done < "$gitlist"
+
+find "$TMPDIR2" -name "\.git" > "$gitlist"
+while read tmp_git
+do
+	rm -rf "$tmp_git"
+done < "$gitlist"
+
+
+mkdir -p "$DIFFDIR/inputdata" "$DIFFDIR/c-coupler_platform" "$DIFFDIR/working_dir"
+rm "$DIFFDIR/summary.diff" 2> /dev/null
+touch "$DIFFDIR/summary.diff"
+echo "In the following, we use archive1 to rename the simulation setting package $1, and use archive2 to rename the simulation setting package $2." >> "$DIFFDIR/summary.diff"
+echo "" >> "$DIFFDIR/summary.diff"
+
+#for file in configure compile runcase clean
+#do
+#	diff -r "$TMPDIR1/working_dir/$file" "$TMPDIR2/working_dir/$file" > "$DIFFDIR/working_dir/$file.diff" 2> /dev/null
+#	sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/working_dir/$file.diff"
+#	sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/working_dir/$file.diff"
+#done
+#popd > /dev/null 2>&1
+
+#for dir in config utils
+#do
+#	mkdir -p "$DIFFDIR/working_dir/$dir"
+#	diff -r "$TMPDIR1/working_dir/$dir" "$TMPDIR2/working_dir/$dir" > "$DIFFDIR/working_dir/$dir/$dir.diff" 2> /dev/null
+#	sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/working_dir/$dir/$dir.diff"
+#	sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/working_dir/$dir/$dir.diff"
+#done
+#popd > /dev/null 2>&1
+
+
+echo "" >> "$DIFFDIR/summary.diff"
+echo "" >> "$DIFFDIR/summary.diff"
+echo "Summary for the working directory:" >> "$DIFFDIR/summary.diff"
+diff -r "$TMPDIR1/working_dir" "$TMPDIR2/working_dir" > "$DIFFDIR/working_dir/working_dir.diff" 2> /dev/null
+if [ "$?" = "1" ]; then
+	echo "There are differences between the working directory of the corresponding two model simulations. Please refer to working_dir/working_dir.diff" >> "$DIFFDIR/summary.diff"
+elif [ "$?" = "2" ]; then
+    if [ -s "$DIFFDIR/working_dir/working_dir.diff" ]; then
+	    echo "There are differences between the working directory of the corresponding two model simulations. Please refer to working_dir/working_dir.diff" >> "$DIFFDIR/summary.diff"
+    fi
+fi
+sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/working_dir/working_dir.diff"
+sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/working_dir/working_dir.diff"
+
+mkdir -p "$DIFFDIR/c-coupler_platform/config" "$DIFFDIR/c-coupler_platform/scripts" "$DIFFDIR/c-coupler_platform/models"
+
+for path in config scripts
+do
+	echo "" >> "$DIFFDIR/summary.diff"
+	echo "" >> "$DIFFDIR/summary.diff"
+	echo "Summary for the $path:" >> "$DIFFDIR/summary.diff"
+	mkdir -p "$DIFFDIR/c-coupler_platform/$path"
+	diff -r "$TMPDIR1/c-coupler_platform/$path" "$TMPDIR2/c-coupler_platform/$path" > "$DIFFDIR/c-coupler_platform/$path/$path.diff" 2> /dev/null
+	if [ "$?" = "1" ]; then 
+		echo "There are differences between $path of the c-coupler_platforms for the corresponding two model simulations. Please refer to c-coupler_platform/$path/$path.diff" >> "$DIFFDIR/summary.diff"
+    elif [ "$?" = "2" ]; then
+        if [ -s "$DIFFDIR/c-coupler_platform/$path/$path.diff" ]; then
+		    echo "There are differences between $path of the c-coupler_platforms for the corresponding two model simulations. Please refer to c-coupler_platform/$path/$path.diff" >> "$DIFFDIR/summary.diff"
+        fi
+	fi
+	sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/c-coupler_platform/$path/$path.diff"
+	sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/c-coupler_platform/$path/$path.diff"
+done
+
+models_list=$(mktemp)
+pushd "$TMPDIR1/c-coupler_platform/models" > /dev/null 2>&1
+ls | while read -r i
+do
+	if [ -f $i ]; then
+		echo "$i" >> $models_list
+	fi
+	ls $i | while read -r j
+	do
+		echo "$i/$j" >> $models_list
+	done
+done
+popd > /dev/null 2>&1
+
+pushd "$TMPDIR2/c-coupler_platform/models" > /dev/null 2>&1
+touch $models_list
+ls | while read -r i
+do
+	if [ -f $i ]; then
+		echo "$i" >> $models_list
+	fi
+	ls $i | while read -r j
+	do
+		echo "$i/$j" >> $models_list
+	done
+done
+popd > /dev/null 2>&1
+
+codepath=$(sort -u $models_list)
+
+echo "" >> "$DIFFDIR/summary.diff"
+echo "" >> "$DIFFDIR/summary.diff"
+echo "Summary for the model codes:" >> "$DIFFDIR/summary.diff"
+for path in $codepath
+do
+
+	file=$(basename $path)
+	mkdir -p "$DIFFDIR/c-coupler_platform/models/$path"
+	if [ -d "/$TMPDIR1/c-coupler_platform/models/$path" -a -d "/$TMPDIR2/c-coupler_platform/models/$path" ]; then
+		diff -r "$TMPDIR1/c-coupler_platform/models/$path" "$TMPDIR2/c-coupler_platform/models/$path" > "$DIFFDIR/c-coupler_platform/models/$path/$file.diff"
+		if [ "$?" = "1" ]; then
+			echo "There are differences between the model code $path under c-coupler_platform/models for the corresponding two model simulations. Please refer to c-coupler_platform/models/$path/$file.diff" >> "$DIFFDIR/summary.diff"
+        elif [ "$?" = "2" ]; then
+            if [ -s "$DIFFDIR/c-coupler_platform/models/$path/$file.diff" ]; then
+			    echo "There are differences between the model code $path under c-coupler_platform/models for the corresponding two model simulations. Please refer to c-coupler_platform/models/$path/$file.diff" >> "$DIFFDIR/summary.diff"
+            fi
+		fi
+		sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/c-coupler_platform/models/$path/$file.diff"
+		sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/c-coupler_platform/models/$path/$file.diff"
+	elif [ -d "/$TMPDIR1/c-coupler_platform/models/$path" ]; then
+		rm "$DIFFDIR/c-coupler_platform/models/$path/$file.diff" 2> /dev/null
+		touch "$DIFFDIR/c-coupler_platform/models/$path/$file.diff" 2> /dev/null
+		for name in $(ls "/$TMPDIR1/c-coupler_platform/models/$path")
+		do
+			echo "Only in archive1/c-coupler_platform/models/$path: $name" >> "$DIFFDIR/c-coupler_platform/models/$path/$file.diff"
+		done
+		echo "There are differences between the model code $path under c-coupler_platform/models for the corresponding two model simulations. Please refer to c-coupler_platform/models/$path/$file.diff" >> "$DIFFDIR/summary.diff"
+	else
+		rm "$DIFFDIR/c-coupler_platform/models/$path/$file.diff" 2> /dev/null
+		touch "$DIFFDIR/c-coupler_platform/models/$path/$file.diff" 2> /dev/null
+		for name in $(ls "/$TMPDIR2/c-coupler_platform/models/$path")
+		do
+			echo "Only in archive2/c-coupler_platform/models/$path: $name" >> "$DIFFDIR/c-coupler_platform/models/$path/$file.diff"
+		done
+		echo "There are differences between the model code $path under c-coupler_platform/models for the corresponding two model simulations. Please refer to c-coupler_platform/models/$path/$file.diff" >> "$DIFFDIR/summary.diff"
+	fi
+
+done
+
+rm $models_list
+
+echo "" >> "$DIFFDIR/summary.diff"
+echo "" >> "$DIFFDIR/summary.diff"
+echo "Summary for the inputdata:" >> "$DIFFDIR/summary.diff"
+diff -u "$TMPDIR1/working_dir/config/common/reproducibility/input_data_index" "$TMPDIR2/working_dir/config/common/reproducibility/input_data_index" > "$DIFFDIR/inputdata/inputdata.diff" 2> /dev/null
+if [ "$?" = "1" ]; then
+	echo "There are differences between the inputdata of the corresponding two model simulations. Please refer to inputdata/inputdata.diff" >> "$DIFFDIR/summary.diff"
+elif [ "$?" = "2" ]; then
+    if [ -s "$DIFFDIR/inputdata/inputdata.diff" ]; then
+	    echo "There are differences between the inputdata of the corresponding two model simulations. Please refer to inputdata/inputdata.diff" >> "$DIFFDIR/summary.diff"
+    fi
+fi
+sed -i "s#$TMPDIR1#archive1#" "$DIFFDIR/inputdata/inputdata.diff"
+sed -i "s#$TMPDIR2#archive2#" "$DIFFDIR/inputdata/inputdata.diff"
+
+rm -rf "${TMPDIR1}"
+rm -rf "${TMPDIR2}"
+
+echo ""
+echo ""
+echo ""
+echo "The process of differing the two simulation setting packages finishes. The result is under $DIFFDIR"
+echo ""
+echo ""
+echo ""
+
+
+if grep differences "$DIFFDIR/summary.diff" > /dev/null 2>&1; then
+    echo "There are differences between the two simulation setting packages. Please check $DIFFDIR/summary.diff"
+else
+    echo "The two simulation setting packages are the same."
+fi
+
+echo ""
+

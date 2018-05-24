@@ -1,0 +1,64 @@
+# $Id: base_variables,v 1.1.2.4 2003/12/15 22:00:34 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+LD		   = esld
+AR		   = esar
+AR_FLAGS	   = cr
+RM		   = rm -f
+RANLIB		   = true
+OMAKE		   = ${MAKE}
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+# ######################### C and Fortran compiler ########################
+#
+C_CC		   = escc
+C_FC		   = esf90 -Pstack
+C_FC_MOD           = -I
+C_CLINKER_SLFLAG   = -rpath
+C_FLINKER_SLFLAG   = -rpath
+C_CLINKER	   = escc
+C_FLINKER	   = esf90 -Pstack
+C_CCV		   = escc -V
+C_FCV              = esf90 -V
+C_SYS_LIB	   = -lfpe -lfortran -lftn -lfastm -lmalloc 
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = -g 
+G_FOPTFLAGS	   = -g 
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = 
+O_FOPTFLAGS	   = -C vopt
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = esc++
+CXX_FC		   = esf90 -Pstack
+CXX_CLINKER_SLFLAG = -rpath
+CXX_FLINKER_SLFLAG = -rpath
+CXX_CLINKER	   = esc++
+CXX_FLINKER	   = esc++
+CXX_CCV		   = esc++ -V
+CXX_SYS_LIB	   = 
+
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = -g
+GCXX_FOPTFLAGS	   = -g
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   = 
+OCXX_FOPTFLAGS	   = 
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = -g 
+GCOMP_FOPTFLAGS	   = -g
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   = 
+OCOMP_FOPTFLAGS	   = 
+# ########################### Alice install options ###########################
+#
+##################################################################################
+#
+#   Alice installers should very rarely ever need to edit anything below this 
+#
+##################################################################################
+
+PARCH		   = ES
+
+include ${ESMF_DIR}/build/common_variables

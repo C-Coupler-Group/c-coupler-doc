@@ -1,0 +1,3 @@
+COMPSET=GAMIL2-GIGC
+CASEROOT="/home/liuli/git_checkout/model_experiments/GAMIL2-GIGC-test1"
+MACH=generic_linux

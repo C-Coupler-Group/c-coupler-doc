@@ -1,0 +1,10 @@
+#!/bin/bash
+
+random_seed_for_perturb_roundoff_errors=100
+roundoff_errors_perturbation_type="set_last_bit_to_1"
+
+
+if [ -e $RUN_ALL_DIR/${MODEL_NAME}.nml  ]; then
+    sed -i "s#random_seed_for_perturb_roundoff_errors.*#random_seed_for_perturb_roundoff_errors=$random_seed_for_perturb_roundoff_errors#" $RUN_ALL_DIR/${MODEL_NAME}.nml
+    sed -i "s#roundoff_errors_perturbation_type.*#roundoff_errors_perturbation_type=\"$roundoff_errors_perturbation_type\"#" $RUN_ALL_DIR/${MODEL_NAME}.nml
+fi

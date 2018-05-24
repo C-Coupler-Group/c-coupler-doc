@@ -1,0 +1,67 @@
+# $Id: base_variables_native,v 1.1.8.1 2003/12/04 23:05:12 erik Exp $ 
+#
+#     See the file build/base_variables.defs for a complete explanation of all these fields
+#
+LD		   = mpif90
+AR		   = ar
+AR_FLAGS	   = cr
+RM		   = rm -f
+RANLIB		   = false
+OMAKE		   = ${MAKE}
+SHELL		   = /bin/sh
+SED		   = /bin/sed
+# ######################### C and Fortran compiler ########################
+#
+PROF		   = -ftrace -P stack
+DEBUG		   = -g 
+#INCLUDE		   = -I/usr/include -I/usr/include/sys
+OPTIMIZE	   = -Cvopt
+C_CC		   = mpic++
+C_FC		   = mpif90 
+C_FC_MOD           = -I
+C_CLINKER	   = mpic++
+C_FLINKER	   = sxmpif90  
+C_CCV		   = mpic++ -V -c
+C_FCV              = mpif90 -V -c
+C_SYS_LIB	   = 
+# ---------------------------- BOPT - g options ----------------------------
+G_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+G_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# ----------------------------- BOPT - O options -----------------------------
+O_COPTFLAGS	   = $(OPTIMIZE) $(PROF) -I$(INCLUDE)
+O_FOPTFLAGS	   = $(OPTIMIZE) $(PROF) -I$(INCLUDE)
+# ########################## C++ compiler ##################################
+#
+CXX_CC		   = mpic++
+CXX_FC		   = mpif90 
+CXX_CLINKER_SLFLAG = 
+CXX_FLINKER_SLFLAG = 
+CXX_CLINKER	   = mpic++
+CXX_FLINKER	   = mpif90
+CXX_CCV		   = mpic++ -V -c
+CXX_SYS_LIB	   = 
+
+# ------------------------- BOPT - g_c++ options ------------------------------
+GCXX_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+GCXX_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# ------------------------- BOPT - O_c++ options ------------------------------
+OCXX_COPTFLAGS	   = $(OPTIMIZE) $(PROF)
+OCXX_FOPTFLAGS	   = $(OPTIMIZE) $(PROF)
+# -------------------------- BOPT - g_complex options ------------------------
+GCOMP_COPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+GCOMP_FOPTFLAGS	   = $(DEBUG) $(PROF) $(INCLUDE)
+# --------------------------- BOPT - O_complex options -------------------------
+OCOMP_COPTFLAGS	   = $(OPTIMIZE) $(PROF)
+OCOMP_FOPTFLAGS	   = $(OPTIMIZE) $(PROF)
+# ########################### Alice install options ###########################
+#
+
+##################################################################################
+#
+#   Alice installers should very rarely ever need to edit anything below this 
+#
+##################################################################################
+
+PARCH		   = SX6
+
+include ${ESMF_DIR}/build/common_variables

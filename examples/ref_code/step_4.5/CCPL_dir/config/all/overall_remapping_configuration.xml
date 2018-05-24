@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<root>
+    <remapping_setting status="on">
+       <remapping_algorithms status="on">
+           <H2D_algorithm name="bilinear" status="on">
+               <parameter name="enable_extrapolate" value="false" />
+           </H2D_algorithm>
+           <H2D_weights status="on">
+               <file name="map_atm_to_ocn_bilin.nc" />
+          </H2D_weights>
+        </remapping_algorithms>
+        <fields status="on" specification="default" />
+     </remapping_setting>
+     <remapping_setting status="off">
+        <remapping_algorithms status="on">
+            <H2D_weights status="on">
+                <file name="map_atm_to_ocn_bilin.nc" />
+            </H2D_weights>
+        </remapping_algorithms>
+        <fields status="on" specification="name">
+            <entry value="psl" />
+            <entry value="ts" />
+        </fields>
+    </remapping_setting>
+</root>

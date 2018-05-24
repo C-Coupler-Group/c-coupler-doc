@@ -1,0 +1,47 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code was initially finished by Dr. Ruizhe Li on 2013/12/03. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+BAK_PARAM="$@"
+TEMP=$(getopt -q -o h -n checkout_experiment -- "$@")
+
+eval set -- $TEMP
+BYPASS_PLATFORM="no"
+BYPASS_INPUTDATA="no"
+while true; do
+    case "$1" in
+        --) shift; break ;;
+        *) shift;;
+    esac
+done
+
+if [ ! -f "$1" ]; then
+    echo Simulation setting package \"$1\" does not exists. Please check.
+    exit 1
+fi
+
+TMPDIR=$(mktemp -d)
+
+tar xf "$1" -C "$TMPDIR"
+if [ $? -ne 0 ]; then
+    echo \"$1\" is not a simulation setting package. Please check
+    rm -rf "$TMPDIR"
+    exit 1
+fi
+
+if [ ! -f "$TMPDIR/config/common/reproducibility/checkout_experiment_system" ]; then
+    echo "Script checkout_experiment_system does not exist in the simulation setting package, abort."
+    rm -rf "$TMPDIR"
+    exit 1
+fi
+
+eval set -- "$BAK_PARAM"
+"$TMPDIR/config/common/reproducibility/checkout_experiment_system" "$@"
+
+rm -rf "$TMPDIR"
+

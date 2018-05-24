@@ -1,0 +1,33 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Ruizhe Li on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Ruizhe Li via liruizhe@gmail.com,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+#!/bin/bash
+
+# == Get the path of this script ==
+MYPATH=$(readlink -f "$0")
+MYPATH=$(dirname "$MYPATH")
+# =================================
+
+if [ ! -e "${SCRIPTSROOT}" ]; then
+    echo 
+    echo "[ERROR]: Cannot find the SCRIPTSROOT: \"${SCRIPTSROOT}\""
+    echo "Please set the SCRIPTSROOT through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform"
+    echo 
+    exit 1
+fi
+
+if [ ! -f "${MYPATH}/utils/create_newcase_system" ]; then
+    echo 
+    echo "[ERROR]: ${SCRIPTSROOT}/utils/create_newcase_system does not exist. "
+    echo "Please check the environment variable SCRIPTSROOT (it is set through source register_platform.sh or register_platform.csh under the directory scripts of the C-Coupler model platform)"
+    echo 
+    exit 1
+fi
+
+"${SCRIPTSROOT}/utils/create_newcase_system" "$@"

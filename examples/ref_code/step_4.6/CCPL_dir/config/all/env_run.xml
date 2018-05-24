@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<Time_setting
+    case_name="coupling_connections_demo"
+    model_name="coupling_connections_demo"
+    case_description="The run template of coupling_connections"
+    run_type="initial"
+    leap_year="off"
+    start_date="20150801"
+    start_second="00000"
+    rest_freq_unit="seconds"
+    rest_freq_count="3600"
+    rest_ref_case="C-Coupler testing"
+    rest_ref_date="00040401"
+    rest_ref_second="0"
+    stop_option="nseconds"
+    stop_date="-999"
+    stop_second="-999"
+    stop_n="10800"
+/>

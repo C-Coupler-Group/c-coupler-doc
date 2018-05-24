@@ -1,0 +1,12 @@
+COMPSET=atm_ocn_demo
+MACH=generic_linux
+#CONFIGROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/C-Coupler_Model_Platform/config
+#CODEROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/C-Coupler_Model_Platform/models
+#DATAROOT=/data/home/liuli/check_out/coupler/uniform_model_platform/inputdata
+export LIBROOT=/home/zhangcheng/demo_coupler2/model_experiments/coupling_connections_demo/run/lib
+export INCROOT=/home/zhangcheng/demo_coupler2/model_experiments/coupling_connections_demo/run/lib/include
+export COMMON_COMPILER=/home/zhangcheng/demo_coupler2/model_experiments/coupling_connections_demo/config/common/machine/generic_linux/common_compiler.generic_linux.cfg
+export ENSEMBLE_NUM=0
+export OS=Linux
+export GMAKE_J=8
+export SUBMITTER=mpi

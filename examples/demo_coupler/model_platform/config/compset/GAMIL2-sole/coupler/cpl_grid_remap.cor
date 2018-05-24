@@ -1,0 +1,26 @@
+
+gamil_grid_file = add_nc_file("remap_weights_files/remap_weights_files_by_SCRIP/map_licomeq1x1_to_gamil128x60_aave_091022.nc", "r")
+
+gamil_1D_grid_lon = new_1D_grid("lon", "degrees", "cyclic", "128")
+gamil_1D_grid_lat = new_1D_grid("lat", "degrees", "60")
+gamil_1D_grid_lev4 = new_1D_grid("lev", "levels", "4")
+gamil_1D_grid_lev26 = new_1D_grid("lev", "levels", "26")
+gamil_1D_grid_lev27 = new_1D_grid("lev", "levels", "27")
+gamil_1D_grid_tracer = new_1D_grid("tracer", "tracers", "5")
+gamil_1D_grid_tracer4 = new_1D_grid("tracer", "tracers", "4")
+gamil_1D_grid_tracer27 = new_1D_grid("tracer", "tracers", "27")
+gamil_grid = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat)
+gamil_3D_grid_lev4 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev4)
+gamil_3D_grid_lev26 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26)
+gamil_3D_grid_lev27 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev27)
+gamil_3D_grid_tracer = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_tracer)
+gamil_4D_grid_q3 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26, gamil_1D_grid_tracer)
+gamil_4D_grid_lev27_tracer27 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev27, gamil_1D_grid_tracer27)
+gamil_4D_grid_lev26_tracer4 = combine_grids(gamil_1D_grid_lon, gamil_1D_grid_lat, gamil_1D_grid_lev26, gamil_1D_grid_tracer4)
+gamil_grid%center%lon = read_field(gamil_grid_file, "xc_b")
+gamil_grid%center%lat = read_field(gamil_grid_file, "yc_b")
+gamil_grid%vertex%lon = read_field(gamil_grid_file, "xv_b", "4")
+gamil_grid%vertex%lat = read_field(gamil_grid_file, "yv_b", "4")
+gamil_grid%mask = read_field(gamil_grid_file, "mask_b")
+
+

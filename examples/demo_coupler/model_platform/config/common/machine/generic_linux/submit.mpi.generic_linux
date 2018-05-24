@@ -1,0 +1,36 @@
+#!/bin/bash
+
+check=`expr $# % 4`
+if (( check != 0 ))
+then
+    echo $#
+    echo "Wrong paramters!"
+    exit 1;
+fi
+
+#Number of Models
+num_of_models=`expr $# / 4`
+
+#paramter of mpiexec
+param="mpiexec"
+
+for (( i = 0; i < num_of_models; i++ ))
+do
+    execmd=$1
+    shift
+    inputnml=$1
+    shift
+    num_total_proc=$1
+    shift
+    num_thread=$1
+    shift
+    if (( i > 0 ))
+    then
+	param="$param : "
+    fi
+    param="$param -n $num_total_proc -env I_MPI_PIN_DOMAIN socket -env OMP_NUM_THREADS $num_thread \"$execmd\" \"$inputnml\""
+done
+
+param="$param > ${log_dir}/${CASENAME}.log.${configuration_time}"
+echo $param
+eval $param

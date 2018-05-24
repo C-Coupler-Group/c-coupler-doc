@@ -1,0 +1,520 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Cheng Zhang on 2013/3/21,
+#  and then modified by Dr. Li Liu. 
+#  If you have any problem, please contact:
+#  Dr. Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+# == Functions for this script only ==
+function usage
+{
+    echo "usage compile [-print_on_screen] [-ensemble_member num1,num2-num3,num4,...]"
+	echo "-ensmble_member is enbled only when ensemble is uesed" 
+	echo "num1,num2,num3,num4 are positive numbers and num2<=num3"
+}
+
+function trim
+{
+    echo "$1" | grep -o "[^ ]\+\( \+[^ ]\+\)*"
+}
+
+function check_srclist
+{
+    while read line
+    do
+        if [ ! -e "$line" ]; then
+            report_logs "ERROR" "The code file or directory \"$line\" does not exist.\nPlease check ${CASEROOT}/config/$2/$3/form_src.sh"
+            exit -1
+        fi
+    done < $1
+}
+
+function copy_src_files
+{
+    rm -rf $2/*
+    mkdir $2/individual_src_files
+    rm -f $1.new
+    while read line
+    do
+        if [ -d "$line" ]; then
+            for suffix in .h  .c  .cxx  .f  .F  .f90  .F90; do
+                cp -rf $line/*$suffix  $2 2> /dev/null 
+            done
+cat >> $1.new << END
+$line
+END
+        else
+            cp -f $line  $2 2> /dev/null 
+            ln -fs $line  $2/individual_src_files/
+        fi
+    done < $1
+
+cat >> $1.new << END
+$2/individual_src_files/
+END
+
+    mv $1.new $1
+}
+
+function copy_model
+{
+#    src_empty=$(find "$1/obj" -name *.o 2>&- | wc -l)
+#    dst_empty=$(find "$2/obj" -name *.o 2>&- | wc -l)
+#    if [ "$src_empty" != "0" -a "$dst_empty" = "0" ]; then
+#        cp -rp $1/obj/* $2/obj
+#    fi
+    cp -rp $1/obj/* $2/obj
+}
+
+function copy_lib
+{
+#    src_empty=$(find "$1/obj" -name *.o 2>&- | wc -l)
+#    dst_empty=$(find "$2/obj" -name *.o 2>&- | wc -l)
+#    if [ "$src_empty" != "0" -a "$dst_empty" = "0" ]; then
+#        cp -rp $1/obj/* $2/obj
+#    fi
+    cp -rp $1/obj/* $2/obj
+}
+
+check_private_compiler(){
+    srcdir="$1"
+    dstdir="$2"
+    for file in build.sh compiler.cfg form_src.sh
+    do
+        diff "$srcdir/$file" "$dstdir/$file" > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+                        report_logs "ERROR" "The file "$srcdir/$file" has been modified after the configuration of the simulation.\nPlease verify: reconfigure the simulation and then compile it."
+            return 1
+        fi
+    done
+    return 0
+}
+
+check_common_compiler(){
+    srcdir="$1"
+    dstdir="$2"
+
+    for file in env machine/$MACH/common_compiler.$MACH.cfg machine/$MACH/env.$MACH  case.conf
+    do
+        diff "$srcdir/$file" "$dstdir/$file" > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+                        report_logs "ERROR" "The file "$srcdir/$file" has been modified after the configuration of the simulation.\nPlease verify: reconfigure the simulation and then compile it."
+            return 1
+        fi
+    done
+    return 0
+}
+
+export LC_ALL="POSIX"
+export PATH=$PATH:$SCRIPTSROOT/utils/
+
+TEMP=$(getopt -a -o h -l print_on_screen,ensemble_member:,help -n compile -- "$@")
+if [ $? -ne 0 ]; then
+    usage
+    exit 1
+fi
+eval set -- $TEMP
+
+ON_SCREEN="FALSE"
+while true; do
+    case "$1" in
+        --print_on_screen) ON_SCREEN="TRUE"; shift 1;;
+		--ensemble_member) ensemble_member="$2"; shift 2;;
+        --) shift 1; break;;
+        -h | --help)
+        usage
+        exit 0;;
+        *) report_logs "ERROR" "Internal error of the C-Coupler platform is detected. Please contact the C-Coupler team!"; exit 1 ;;
+    esac
+done
+
+if [ $# -gt 0 ]; then
+	report_logs "ERROR" "There is the redundant parameter: $@"
+	exit 1
+fi
+
+#source the environment of the case and the compile
+source "${CASEROOT}/config/common/run.conf"
+source "${CASEROOT}/config/common/env"
+export ENV_COMPILE="${CASEROOT}/config/common/env_compile"
+export CASE_NAME="${CASEROOT##*/}"
+source "$ENV_COMPILE"
+source "$SCRIPTSROOT/utils/check_ensemble"
+source "$SCRIPTSROOT/utils/check_ensemble_member"
+
+export SYSTEM_PATH="${CASEROOT}/config"
+
+
+if [ ! -z "$ensemble_member" ]; then
+	list=$(check_ensemble_member "$ENSEMBLE_NUM" "$ensemble_member")
+	if [ $? -ne 0 ]; then
+		usage
+		exit 1
+	else
+		IFS_BAK=$IFS
+		IFS=" "
+		bitmap=($list)
+		IFS=$IFS_BAK
+	fi
+fi
+
+#Compile the libs used in this case.
+declare -a libs
+declare -a libs_makefile
+declare -a libs_makedep
+
+#RUN_ALL_DIR="$RUNROOT/all"
+
+ulibs="-L\${LIBROOT}"
+
+i=0
+while read libs[i]
+do
+    read libs_makefile[i]
+    read libs_makedep[i]
+    ulibs="${ulibs} -l${libs[i]}"
+    let i=i+1
+done < ${SYSTEM_PATH}/lib/libs.cfg
+
+num_libs=$i
+
+declare -a models
+declare -a models_type
+declare -a models_num_total_proc
+declare -a models_x_total_proc
+declare -a models_y_total_proc
+declare -a models_nthrd
+declare -a models_makefile
+declare -a models_makedep
+declare -a models_grid
+
+i=0 
+models_conf=${CASEROOT}/config/common/models.conf
+
+while read models[i]
+do
+    read tmp
+    while read line
+    do
+    if [ "$line" = "}" ]
+    then
+        break
+    fi
+    key=`trim "${line%\=*}"`
+    value=`trim "${line#$key*=}"`
+    case "$key" in
+        type)
+        models_type[i]="$value"
+        ;;
+        num_total_proc)
+        models_num_total_proc[i]="$value"
+        ;;
+        num_x_proc)
+        models_num_x_proc[i]="$value"
+        ;;
+        num_y_proc)
+        models_num_y_proc[i]="$value"
+        ;;
+        num_thread)
+        models_nthrd[i]="$value"
+        ;;
+        makefile)
+        models_makefile[i]="$value"
+        ;;
+        makedep)
+        models_makedep[i]="$value"
+        ;;
+        grid)
+        models_grid[i]="$value"
+        ;;
+        *)
+        ;;
+    esac
+    done
+    #touch ${models_namelist_conf[i]}
+    #touch ${models_input_conf[i]}
+    #touch ${models_env_conf[i]}
+    let i=i+1
+done < "$models_conf"
+
+num_models=$i
+
+check_common_compiler "${CASEROOT}/config/common" "${CASEROOT}/config/.backup_compiler/common"
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+for (( i = 0; i < num_models; i ++ ))
+do
+    check_private_compiler "${CASEROOT}/config/${models_type[i]}/${models[i]}" "${CASEROOT}/config/.backup_compiler/${models_type[i]}/${models[i]}"
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+done
+
+for (( i = 0; i < num_libs; i ++ ))
+do
+    check_private_compiler "${CASEROOT}/config/lib/${libs[i]}" "${CASEROOT}/config/.backup_compiler/lib/${libs[i]}"
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+done
+
+sed -i "s/^ULIBS.*/ULIBS\t:=\t${ulibs}/" ${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg
+
+#Macfile=${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg
+#sed -i -e 's/USE_OMP[ |\t]*:=.*/USE_OMP\t:= FALSE/' ${Macfile}
+export USE_OMP="FALSE"
+for (( i = 0; i < num_models; i++ ))
+do
+    if [ ${models_nthrd[i]} -gt 1 ]; then
+        #sed -i -e 's/USE_OMP[ |\t]*:=.*/USE_OMP\t:= TRUE/' ${Macfile}
+        export USE_OMP="TRUE"
+        break
+    fi
+done
+
+if [ ${ENSEMBLE_NUM} -lt 1 ]; then
+    USE_ENSEMBLE="false"
+else
+    USE_ENSEMBLE="true"
+fi
+
+if ! check_ensemble_run_directory "$ENSEMBLE_NUM"; then
+    report_logs "ERROR" "The directory run already exists and the ensemble member number under the directory run is inconsistent with the variable \"ensemble_number\" in the \"config/common/case.conf\" (when \"ensemble_number\" is not set, the ensemble member number is 0)\nPlease verify: modify \"config/common/case.conf\", or remove the directory run, or duplicate the current simulation to a new simulation."
+    exit 1
+fi
+
+ensemble_idx=1
+if [ $ENSEMBLE_NUM -eq 0 ]; then
+    ensemble_idx=0
+fi
+
+for ((; ensemble_idx<=ENSEMBLE_NUM; ensemble_idx++))
+do
+
+if [ ! -z "$ensemble_member" ]; then
+	if [ ${bitmap[ensemble_idx]} -eq 0 ]; then
+		continue
+	fi
+fi
+
+if [ "$USE_ENSEMBLE" = "false" ]; then
+    export RUNROOT="${CASEROOT}/run"
+    echo "export ENSEMBLE_NUM=$ENSEMBLE_NUM" > ${ENV_COMPILE}
+    echo "export ENSEMBLE_IDX=-1" >> ${ENV_COMPILE}
+    echo "export LIBROOT=${RUNROOT}/lib" >> ${ENV_COMPILE}
+    echo "export INCROOT=${RUNROOT}/lib/include" >> ${ENV_COMPILE}
+    echo "export COMMON_COMPILER=${CASEROOT}/config/common/machine/$MACH/common_compiler.$MACH.cfg" >> ${ENV_COMPILE}
+    cat ${CASEROOT}/config/common/machine/${MACH}/env.${MACH} >> ${ENV_COMPILE}
+else
+        echo
+        echo
+        echo
+        echo "************* Compilation for ensemble member $ensemble_idx ************"
+        echo
+    fix=$(echo -n "${ENSEMBLE_NUM}" | wc | awk '{print $3}')
+    index=$(printf "%0${fix}d" "$ensemble_idx")
+    export RUNROOT="${CASEROOT}/run/ensemble_${index}"
+    echo "export ENSEMBLE_NUM=$ENSEMBLE_NUM" > ${ENV_COMPILE}
+    echo "export ENSEMBLE_IDX=$ensemble_idx" >> ${ENV_COMPILE}
+    echo "export LIBROOT=${RUNROOT}/lib" >> ${ENV_COMPILE}
+    echo "export INCROOT=${RUNROOT}/lib/include" >> ${ENV_COMPILE}
+    echo "export COMMON_COMPILER=${CASEROOT}/config/common/machine/$MACH/common_compiler.$MACH.cfg" >> ${ENV_COMPILE}
+    cat ${CASEROOT}/config/common/machine/${MACH}/env.${MACH} >> ${ENV_COMPILE}
+fi
+
+#export ENV_COMPILE="${RUNROOT}/env_compile"
+source ${ENV_COMPILE}
+
+if [ $ensemble_idx -gt 1 ]; then
+    fix=$(echo -n "${ENSEMBLE_NUM}" | wc | awk '{print $3}')
+    index=$(printf "%0${fix}d" "1")
+    SRCROOT="${CASEROOT}/run/ensemble_${index}"
+    for (( i = 0; i < num_models; i++ ))
+    do
+        src_exedir=${SRCROOT}/${models_type[i]}/${models[i]}
+        dst_exedir=${RUNROOT}/${models_type[i]}/${models[i]}
+        copy_model "${src_exedir}" "${dst_exedir}"
+    done
+
+    for(( i = 0; i < num_libs; i++ ))
+    do
+        src_exedir=${SRCROOT}/lib/${libs[i]}
+        dst_exedir=${RUNROOT}/lib/${libs[i]}
+        copy_lib "${src_exedir}" "${dst_exedir}"
+    done
+fi
+
+if [ "$USE_ENSEMBLE" = "true" ]; then
+
+    if [ -f "$CASEROOT/config/ensemble/common/pre_compile.sh" ]; then
+        "$CASEROOT/config/ensemble/common/pre_compile.sh" "$ensemble_idx"
+    fi
+    
+    for (( i=0; i<num_models; i++ ))
+    do
+        if [ -f "$CASEROOT/config/ensemble/${models_type[i]}/${models[i]}/pre_compile.sh" ]; then
+            "$CASEROOT/config/ensemble/${models_type[i]}/${models[i]}/pre_compile.sh" "$ensemble_idx"
+        fi
+    done
+
+    for (( i=0; i<num_models; i++ ))
+    do
+        if [ -f "$CASEROOT/config/ensemble/lib/${libs[i]}/pre_compile.sh" ]; then
+            "$CASEROOT/config/ensemble/lib/${libs[i]}/pre_compile.sh" "$ensemble_idx"
+        fi
+    done
+fi
+
+mkdir -p ${INCROOT}
+
+CASE_LOCAL_INCL=""
+
+for (( i = 0; i < num_libs; i++))
+do
+    Exedir=${LIBROOT}/${libs[i]}
+    Compiledir=${SYSTEM_PATH}/lib/${libs[i]}
+    Makefile=${libs_makefile[i]}
+    Makedep=${libs_makedep[i]}
+    Macfile=${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg
+    Exefile=${Exedir}/exe/lib${libs[i]}.a
+    if [ -f ${Compiledir}/compiler.cfg ]; then
+        Macfile=${Compiledir}/compiler.cfg
+    fi
+    #Srclist=${Compiledir}/src_list
+    Srclist=${RUNROOT}/lib/${libs[i]}/obj/src_list
+    
+    echo "Compiling the lib: ${libs[i]}"
+    if [ ! -e ${Compiledir} ]; then
+        report_logs "ERROR" "The directory \"${Compiledir}\" that should include the configuration files of library \"${libs[i]}\" does not exist. Please check."
+        exit -1
+    fi
+    cd ${Compiledir}
+    if [ ! -e form_src.sh ]; then
+        report_logs "ERROR" "The script file \"form_src.sh\" that specifies the code paths for the library \"${libs[i]}\" does not exist under the directory \"${Compiledir}\". Please check."
+        exit -1
+    fi
+    if [ ! -e build.sh ]; then
+        report_logs "ERROR" "The script file \"build.sh\" that specifies how to compile the code of the library \"${libs[i]}\" does not exist under the directory \"${Compiledir}\". Please check."
+        exit -1
+    fi
+    ./form_src.sh ${ENV_COMPILE} 0 ${Srclist}
+    check_srclist ${Srclist} "lib" "${libs[i]}"
+    copy_src_files ${Srclist} ${Exedir}/src 
+    cd ${Exedir}/src
+    grep  "^[\t ]*module " -Prni * | grep -vni "procedure" | sed "s/:/    /g"  |  awk '{print $2 " " $5}' > ${Exedir}/obj/module_mapping.info 
+    cd ${Compiledir}
+    gcc -o ${Exedir}/obj/makdep ${Makedep}
+    export MACFILE="${Macfile}" 
+    export EXEC="${Exefile}" 
+    export VPFILE="${Srclist}"
+    export configuration_time="$configuration_time"
+    if [ "${ON_SCREEN}" = "FALSE" ]; then
+        ./build.sh "${ENV_COMPILE}" "${Exedir}" "${Makefile}" >& ${Exedir}/build_logs/${libs[i]}.buildlib.${configuration_time}
+    else
+        ./build.sh "${ENV_COMPILE}" "${Exedir}" "${Makefile}" 2>&1 | tee ${Exedir}/build_logs/${libs[i]}.buildlib.${configuration_time} ; ( exit ${PIPESTATUS[0]} )
+    fi
+
+    if [ $? -ne 0 ] ; then
+        report_logs "ERROR" "The building of the library \"${libs[i]}\" fails. Please check the log file \"${Exedir}/build_logs/${libs[i]}.buildlib.${configuration_time}\""
+        exit -1
+    fi
+    cd ${CASEROOT}
+    CASE_LOCAL_INCL="${CASE_LOCAL_INCL} -I${Exedir}/src"
+done
+
+export CASE_LOCAL_INCL="${CASE_LOCAL_INCL} -I${INCROOT}"
+export CCPL_LIB=" -L${LIBROOT} ${ulibs} -lstdc++"
+
+#Compile the models used in this case.
+
+for (( i = 0; i < num_models; i++ ))
+do
+    coupling_nml=$RUNROOT/all/${models[i]}.nml
+    coupling_nml_tmp=$RUNROOT/all/${models[i]}.nml_tmp
+    sed "s#\(comp_log_filename[ \t]*=[ \t]*\"${models[i]}\.log\.\)[0-9\-]*\"#\1${configuration_time}\"#g" ${coupling_nml}  > ${coupling_nml_tmp}
+    mv ${coupling_nml_tmp} ${coupling_nml}
+    Compiledir=${CASEROOT}/config/${models_type[i]}/${models[i]}
+    Exedir=${RUNROOT}/${models_type[i]}/${models[i]}
+    Ntask=${models_num_total_proc[i]}
+    Nxtask=${models_num_x_proc[i]}
+    Nytask=${models_num_y_proc[i]}
+    Nthrd=${models_nthrd[i]}
+    Makefile=${models_makefile[i]}
+    Makedep=${models_makedep[i]}
+    Grid=${models_grid[i]}
+    Exefile=${Exedir}/exe/${models[i]}
+    Macfile=${CASEROOT}/config/common/machine/${MACH}/common_compiler.${MACH}.cfg
+    if [ -f ${CASEROOT}/config/${models_type[i]}/${models[i]}/compiler.cfg ] ; then
+        Macfile=${CASEROOT}/config/${models_type[i]}/${models[i]}/compiler.cfg
+    fi
+    #Srclist=${Compiledir}/src_list
+    Srclist=${RUNROOT}/${models_type[i]}/${models[i]}/obj/src_list
+
+    echo "Compiling the model: ${models[i]}"
+    if [ ! -e ${Compiledir} ]; then
+        report_logs "ERROR" "The directory \"${Compiledir}\" that should include the configuration files of the model \"${models[i]}\" of type \"${models_type[i]}\" does not exist. Please check!"
+        exit -1
+    fi
+    cd ${Compiledir}
+    if [ ! -e form_src.sh ]; then
+        report_logs "ERROR" "The script file \"form_src.sh\" that specifies the code paths for the model \"${models[i]}\" of type \"${models_type[i]}\" does not exist under the directory \"${Compiledir}\". Please check!"
+        exit -1
+    fi
+    if [ ! -e build.sh ]; then
+        report_logs "ERROR" "The script file \"build.sh\" that specifies how to compile the code of the model \"${models[i]}\" of type \"${models_type[i]}\" does not exist under the directory \"${Compiledir}\". Please check!"
+        exit -1
+    fi
+    ./form_src.sh ${ENV_COMPILE} ${models_num_total_proc[i]} ${Srclist}
+    check_srclist ${Srclist} ${models_type[i]} ${models[i]}
+    copy_src_files ${Srclist} ${Exedir}/src 
+    cd ${Exedir}/src
+    grep  "^[\t ]*module " -Prni * | grep -vni "procedure" | sed "s/:/    /g"  |  awk '{print $2 " " $5}' > ${Exedir}/obj/module_mapping.info 
+    cd ${Compiledir}
+    gcc -o ${Exedir}/obj/makdep ${Makedep}
+    if [ -e ${Exefile} ] ; then
+        rm ${Exefile}
+    fi
+    export MACFILE="${Macfile}" 
+    export EXEC="${Exefile}" 
+    export VPFILE="${Srclist}"
+    if [ "${ON_SCREEN}" = "FALSE" ]; then
+        ./build.sh "${ENV_COMPILE}" "${Exedir}" "${Makefile}" "${Ntask}" "${Nthrd}" "${Grid}" "${Nxtask}" "${Nytask}" >& ${Exedir}/build_logs/${models[i]}.buildexe.${configuration_time}
+    else
+        ./build.sh "${ENV_COMPILE}" "${Exedir}" "${Makefile}" "${Ntask}" "${Nthrd}" "${Grid}" "${Nxtask}" "${Nytask}" 2>&1 | tee ${Exedir}/build_logs/${models[i]}.buildexe.${configuration_time} ; ( exit ${PIPESTATUS[0]} )
+    fi
+    if [ $? -ne 0 ] ; then
+        report_logs "ERROR" "The building of the the component model \"${models[i]}\" of type \"${models_type[i]}\" fails. Please check the log file \"${Exedir}/build_logs/${models[i]}.buildexe.${configuration_time}\"."
+        exit -1
+    fi
+    cd ${CASEROOT}
+done
+
+if [ "$USE_ENSEMBLE" = "true" ]; then
+
+    if [ -f "$CASEROOT/config/ensemble/common/post_compile.sh" ]; then
+        "$CASEROOT/config/ensemble/common/post_compile.sh" "$ensemble_idx"
+    fi
+    
+    for (( i=0; i<num_models; i++ ))
+    do
+        if [ -f "$CASEROOT/config/ensemble/${models_type[i]}/${models[i]}/post_compile.sh" ]; then
+            "$CASEROOT/config/ensemble/${models_type[i]}/${models[i]}/post_compile.sh" "$ensemble_idx"
+        fi
+    done
+
+    for (( i=0; i<num_models; i++ ))
+    do
+        if [ -f "$CASEROOT/config/ensemble/lib/${libs[i]}/post_compile.sh" ]; then
+            "$CASEROOT/config/ensemble/lib/${libs[i]}/post_compile.sh" "$ensemble_idx"
+        fi
+    done
+fi
+
+done
+
+echo "Compile Completed"

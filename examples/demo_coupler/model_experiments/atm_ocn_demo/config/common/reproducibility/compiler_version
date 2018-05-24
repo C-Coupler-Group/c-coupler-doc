@@ -1,0 +1,26 @@
+Common Compiler{
+CC := mpiicc
+version:	mpiicc for the Intel(R) MPI Library 3.2.1 for Linux*
+Copyright(C) 2003-2009, Intel Corporation.  All rights reserved.
+icc version 15.0.3 (gcc version 4.8.5 compatibility)
+
+CXX := mpiicpc
+version:	mpiicpc for the Intel(R) MPI Library 3.2.1 for Linux*
+Copyright(C) 2003-2009, Intel Corporation.  All rights reserved.
+icpc version 15.0.3 (gcc version 4.8.5 compatibility)
+
+FC := mpiifort
+version:	mpiifort for the Intel(R) MPI Library 3.2.1 for Linux*
+Copyright(C) 2003-2009, Intel Corporation.  All rights reserved.
+ifort version 15.0.3
+
+LD := $(FC)
+version:	/home/sunchao/demo_coupler/model_platform/scripts/utils/configure_system: line 80: $(FC): command not found
+
+}
+atm_demo{
+}
+ocn_demo{
+}
+c_coupler{
+}

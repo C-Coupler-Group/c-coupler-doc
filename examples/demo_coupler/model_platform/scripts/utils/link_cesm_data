@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# == Get the path of this script ==
+MYPATH=$(readlink -f "$0")
+MYPATH=$(dirname "$MYPATH")
+# =================================
+
+function get_xml_entry
+{
+   cat "$1"|grep "<entry.*id=\"$2\""|sed "s#<entry\s*id=\"$2\"\s*value=\"\([^\"]*\).*#\1#g"
+}
+
+tmplist1=$(mktemp)
+for filelist in $COMPONENT_CONFIG_ROOT/cesm_case_scripts/Buildconf/*.input_data_list
+do
+    exec 3<> "$filelist"
+    while read line <&3
+    do
+        filename=$(echo $line|sed "s#.*=\s*\(.*\)\$#\1#g")
+        echo $filename >> "$tmplist1"
+    done
+    exec 3>&-
+done
+
+cat $COMP_RUN_DATA_DIR/*_in 2>/dev/null|grep "'$DATAROOT"|sed "s#.*'\(.*\)'#\1#g" >> "$tmplist1"
+
+tmplist2=$(mktemp)
+tmpdir=$(mktemp -d)
+sort $tmplist1|uniq > $tmplist2
+unlink $tmplist1
+
+ref_case=$(get_xml_entry "$COMPONENT_CONFIG_ROOT/cesm_case_scripts/env_run.xml" "RUN_REFCASE")
+ref_date=$(get_xml_entry "$COMPONENT_CONFIG_ROOT/cesm_case_scripts/env_run.xml" "RUN_REFDATE")
+ref_case_input="$DATAROOT/cesm-input/ccsm4_init/$ref_case/$ref_date"
+
+exec 3<> "$tmplist2"
+while read filename <&3
+do
+	if [ -z "$filename" ]; then
+		continue
+	fi
+    $MYPATH/link_data $filename $tmpdir/tmp
+    if [ -e "$filename" ]; then
+       unlink $tmpdir/tmp 2> /dev/null
+    fi
+done
+
+if [ -d "$ref_case_input" ]; then
+    lists=$(find $ref_case_input) > /dev/null
+    for casefilename in $lists
+    do
+        if [ ! -d "$casefilename" ]; then
+            echo "$casefilename" > .tmp_casefilename
+            if ! grep "\.svn" .tmp_casefilename  > /dev/null 2>&1; then
+                $MYPATH/link_data $casefilename $tmpdir/tmp
+                unlink $tmpdir/tmp 2> /dev/null
+            fi
+            rm .tmp_casefilename
+        fi
+    done
+fi
+
+
+exec 3>&-
+
+rm -rf $tmpdir
+unlink $tmplist2

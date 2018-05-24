@@ -1,0 +1,38 @@
+#!/bin/bash
+source "$SCRIPTSROOT/utils/common"
+
+jobs_list=""
+resubmit="false"
+tmp_file=`mktemp`
+cp "$1" "$tmp_file"
+while read line; do
+    jobid=`trim "${line%\ *}"`
+    casename=`trim "${jobid%\ *}"`
+    key=`trim "${casename%\ *}"`
+    casename=`trim "${casename#$key* *}"`
+    jobid=`trim "${jobid#$key $casename *}"`
+    log_dir=`trim "${line#$key $casename $jobid *}"`
+    bjobs 2>&1 | grep "$jobid" > /dev/null
+    if [ "$?" != "0" ]; then
+        output="${log_dir}/${casename}.output.${configuration_time}.${jobid}"
+        if [ -f "$output" ]; then
+            grep "Successfully completed" "$output" > /dev/null
+            if [ "$?" != "0" ]; then
+                jobs_list="${jobs_list}${key} "
+            else
+                sed -i "/^$key $casename $jobid\> /d" "$1"
+            fi
+        else
+            sed -i "/^$key $casename $jobid\> /d" "$1"
+        fi
+    else
+        resubmit="true"
+    fi
+done < "$tmp_file"
+rm "$tmp_file"
+
+if [ "$resubmit" = "true" -a "$jobs_list" = "" ]; then
+    jobs_list="-1"
+fi
+
+echo "$jobs_list"

@@ -1,0 +1,239 @@
+#!/bin/bash
+##################################################################################
+#  Copyright (c) 2013, Tsinghua University. 
+#  This code is initially finished by Dr. Cheng Zhang on 2013/3/21. 
+#  If you have any problem, please contact:
+#  Dr. Cheng Zhang via zhang-cheng09@mails.tsinghua.edu.cn,
+#  or Dr. Li Liu via liuli-cess@tsinghua.edu.cn
+##################################################################################
+
+function trim
+{
+    echo "$1" | grep -o "[^ ]\+\( \+[^ ]\+\)*"
+}
+
+function usage
+{
+    echo "usage:"
+    echo "clean all #clean all of models and libs used in the case"
+    echo "clean <name> # clean the model or lib <name>"
+}
+function clean_model
+{
+    rm -f "$2"
+    if [ -d "$1/obj" ] ; then
+       cd "$1/obj" >& /dev/null
+       rm -rf *
+    else
+       report_logs "ERROR" "\"$1/obj\" is not a directory or does not exist. Please check."
+    fi
+    if [ -d "$1/src" ] ; then
+       cd "$1/src" >& /dev/null
+       rm -rf *
+    else
+       report_logs "ERROR" "\"$1/src\" is not a directory or does not exist. Please check."
+    fi
+}
+function clean_lib
+{
+    if [ -d "$1/obj" ] ; then
+       cd "$1/obj" >& /dev/null
+       rm -rf *
+    else
+       report_logs "ERROR" "\"$1/obj\" is not a directory or does not exist. Please check."
+    fi
+    if [ -d "$1/src" ] ; then
+       cd "$1/src" >& /dev/null
+       rm -rf *
+    else
+       report_logs "ERROR" "\"$1/src\" is not a directory or does not exist. Please check."
+    fi
+    if [ -d "$2" ] ; then
+       cd "$2" >& /dev/null
+       rm -rf *
+    else
+       report_logs "ERROR" "\"$2\" is not a directory or does not exist. Please check."
+    fi
+    rm -f "$1/exe/$4"
+    rm -f "$3/$4"
+}
+
+if [ $# -lt 1 ]; then
+    usage
+    exit 1;
+fi
+
+source "${CASEROOT}/config/common/env"
+export ENV_COMPILE="${CASEROOT}/config/common/env_compile"
+export CODEROOT=${CODEROOT}
+source ${ENV_COMPILE}
+export PATH=$PATH:$SCRIPTSROOT/utils/
+source "$SCRIPTSROOT/utils/check_ensemble"
+
+declare -a models
+declare -a models_type
+declare -a models_num_total_proc
+declare -a models_x_total_proc
+declare -a models_y_total_proc
+declare -a models_nthrd
+declare -a models_makefile
+declare -a models_makedep
+declare -a models_grid
+
+i=0 
+models_conf=${CASEROOT}/config/common/models.conf
+libs_conf=${CASEROOT}/config/lib/libs.cfg
+
+i=0
+while read libs[i]
+do
+    read libs_makefile[i]
+    read libs_makedep[i]
+    let i=i+1
+done < ${libs_conf}
+
+num_libs=$i
+
+i=0
+while read models[i]
+do
+    read tmp
+    while read line
+    do
+    if [ "$line" = "}" ]
+    then
+        break
+    fi
+    key=`trim "${line%\=*}"`
+    value=`trim "${line#$key*=}"`
+    case "$key" in
+        type)
+        models_type[i]="$value"
+        ;;
+        num_total_proc)
+        models_num_total_proc[i]="$value"
+        ;;
+        num_x_proc)
+        models_num_x_proc[i]="$value"
+        ;;
+        num_y_proc)
+        models_num_y_proc[i]="$value"
+        ;;
+        num_thread)
+        models_nthrd[i]="$value"
+        ;;
+        makefile)
+        models_makefile[i]="$value"
+        ;;
+        makedep)
+        models_makedep[i]="$value"
+        ;;
+        grid)
+        models_grid[i]="$value"
+        ;;
+        *)
+        ;;
+    esac
+    done
+    let i=i+1
+done < "$models_conf"
+num_models=$i
+
+export CASE_NAME="${CASEROOT##*/}"
+
+if [ ${ENSEMBLE_NUM} -lt 1 ]; then
+    USE_ENSEMBLE="false"
+else
+    USE_ENSEMBLE="true"
+fi
+
+if ! check_ensemble_run_directory "$ENSEMBLE_NUM"; then
+    report_logs "ERROR" "The directory run already exists and the ensemble member number under the directory run is inconsistent with the variable \"ensemble_number\" in the \"config/common/case.conf\" (when \"ensemble_number\" is not set, the ensemble member number is 0)\nPlease verify: modify \"config/common/case.conf\", or remove the directory run, or duplicate the current simulation to a new simulation."
+    exit 1
+fi
+
+ensemble_idx=1
+if [ $ENSEMBLE_NUM -eq 0 ]; then
+    ensemble_idx=0
+fi
+
+for ((; ensemble_idx<=ENSEMBLE_NUM; ensemble_idx++))
+do
+if [ "$USE_ENSEMBLE" = "false" ]; then
+    export RUNROOT="${CASEROOT}/run"
+    echo "export ENSEMBLE_NUM=$ENSEMBLE_NUM" > ${ENV_COMPILE}
+    echo "export LIBROOT=${RUNROOT}/lib" >> ${ENV_COMPILE}
+    echo "export INCROOT=${RUNROOT}/lib/include" >> ${ENV_COMPILE}
+    echo "export COMMON_COMPILER=${CASEROOT}/config/common/machine/$MACH/common_compiler.$MACH.cfg" >> ${ENV_COMPILE}
+    cat ${CASEROOT}/config/common/machine/${MACH}/env.${MACH} >> ${ENV_COMPILE}
+else
+    echo
+    echo
+    echo
+    echo "************ Clean for ensemble member $ensemble_idx *************"
+    echo
+    fix=$(echo -n "${ENSEMBLE_NUM}" | wc | awk '{print $3}')
+    index=$(printf "%0${fix}d" "$ensemble_idx")
+    export RUNROOT="${CASEROOT}/run/ensemble_${index}"
+    echo "export ENSEMBLE_NUM=$ENSEMBLE_NUM" > ${ENV_COMPILE}
+    echo "export LIBROOT=${RUNROOT}/lib" >> ${ENV_COMPILE}
+    echo "export INCROOT=${RUNROOT}/lib/include" >> ${ENV_COMPILE}
+    echo "export COMMON_COMPILER=${CASEROOT}/config/common/machine/$MACH/common_compiler.$MACH.cfg" >> ${ENV_COMPILE}
+    cat ${CASEROOT}/config/common/machine/${MACH}/env.${MACH} >> ${ENV_COMPILE}
+fi
+
+source ${ENV_COMPILE}
+
+if [ "$1" ==  "all" ]; then
+    for(( i = 0; i < num_models; i++ ))
+    do
+        Exedir=${RUNROOT}/${models_type[i]}/${models[i]}
+        Exefile=${Exedir}/exe/${models[i]}
+        clean_model "${Exedir}" "${Exefile}"
+        if [ -x "${CASEROOT}/config/${models_type[i]}/${models[i]}/clean.sh" ]; then
+            ${CASEROOT}/config/${models_type[i]}/${models[i]}/clean.sh "${Exedir}" "${Exefile}" > /dev/null 2> /dev/null
+        fi
+        echo "Finish cleaning the model \"${models[i]}\""
+    done
+
+    for(( i = 0; i < num_libs; i++ ))
+    do
+        Exedir=${LIBROOT}/${libs[i]}
+        Exefile="lib${libs[i]}.a"
+        clean_lib "${Exedir}" "${INCROOT}" "${LIBROOT}" "${Exefile}"
+        echo "Finish cleaning the library \"${libs[i]}\""
+    done
+else
+    find=0
+    for(( i = 0; i < num_models; i++ ))
+    do
+        if [ "$1" == "${models[i]}" ]; then
+            Exedir=${RUNROOT}/${models_type[i]}/${models[i]}
+            Exefile=${Exedir}/exe/${models[i]}
+            clean_model "${Exedir}" "${Exefile}"
+            if [ -x "${CASEROOT}/config/${models_type[i]}/${models[i]}/clean.sh" ]; then
+                ${CASEROOT}/config/${models_type[i]}/${models[i]}/clean.sh "${Exedir}" "${Exefile}" > /dev/null 2> /dev/null
+            fi
+            echo "Finish cleaning the model \"${models[i]}\""
+            find=1
+            break;
+        fi
+    done
+
+    for(( i = 0; i < num_libs; i++ ))
+    do
+        if [ "$1" == "${libs[i]}" ]; then
+            Exedir="${LIBROOT}/${libs[i]}"
+            Exefile="lib${libs[i]}.a"
+            clean_lib "${Exedir}" "${INCROOT}" "${LIBROOT}" "${Exefile}"
+            echo "Finish cleaning the library \"${libs[i]}\""
+            find=1
+            break;
+        fi
+    done
+    if [ $find == 0 ]; then
+        report_logs "ERROR" "$1 is not found. It is not either a library or a component model. Please check."
+    fi
+fi
+
+done

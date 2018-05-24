@@ -1,0 +1,10 @@
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/Data_MGT
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/Parallel_MGT
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/Runtime_MGT
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/XML
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/Driver
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/Utils
+/home/zhangcheng/demo_coupler2/model_platform/models/libs/c_coupler/src/CoR
+/home/zhangcheng/demo_coupler2/model_platform/models/demo/coupling_connections_demo/atm_demo
+/home/zhangcheng/demo_coupler2/model_platform/models/demo/coupling_connections_demo/ocn_demo
+/home/zhangcheng/demo_coupler2/model_platform/models/demo/coupling_connections_demo/ocn_demo2

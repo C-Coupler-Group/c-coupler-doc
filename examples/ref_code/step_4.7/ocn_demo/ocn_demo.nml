@@ -1,0 +1,5 @@
+&ocn_demo_nml
+  time_step               = 1800
+  decomp_type_id          = 1
+  coupling_freq           = 1800
+/

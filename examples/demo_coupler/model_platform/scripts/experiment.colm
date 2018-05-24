@@ -1,0 +1,3 @@
+COMPSET=CoLM-sole
+CASEROOT="/home/liuli/git_checkout/model_experiments/CoLM-sole"
+MACH=generic_linux
